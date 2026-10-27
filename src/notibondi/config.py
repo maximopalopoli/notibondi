@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     database_url: str
 
+
 # Settings are built on first call, not at import time, so importing this
 # module never fails. lru_cache makes every later call return the same instance.
 @lru_cache
