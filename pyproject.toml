@@ -9,15 +9,12 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.20.1",
-    "fastapi==0.162.0",
+    "fastapi>=0.162.0",
     "psycopg[binary]>=3.3.6",
-    "pydantic-settings==2.16.1",
+    "pydantic-settings>=2.16.1",
     "sqlalchemy>=2.1.6",
-    "uvicorn==0.54.0",
+    "uvicorn>=0.54.0",
 ]
-
-[project.scripts]
-notibondi = "notibondi:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

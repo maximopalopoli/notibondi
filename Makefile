@@ -1,4 +1,4 @@
-.PHONY: up migrate dev test check fmt
+.PHONY: up migrate dev lint test check fmt
 
 up:
 	docker compose up -d --wait
