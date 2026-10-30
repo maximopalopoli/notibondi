@@ -13,6 +13,7 @@ from notibondi.db import get_engine
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
+    conn.execute(text("TRUNCATE stops"))
     with zipfile.ZipFile(zip_path) as zf, zf.open("stops.txt") as raw:
         text_file = io.TextIOWrapper(raw, encoding="utf-8", newline="")
         reader = csv.DictReader(text_file)
@@ -38,6 +39,8 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
             """),
             rows,
         )
+
+    conn.execute(text("ANALYZE stops"))
 
 
 if __name__ == "__main__":

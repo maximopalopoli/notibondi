@@ -41,3 +41,14 @@ def test_import_stores_stop_position(db_engine, gtfs_zip):
         assert lat == pytest.approx(-34.581)
         assert lon == pytest.approx(-58.421)
         conn.rollback()
+
+
+def test_import_twice_does_not_duplicate_stops(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM stops")).scalar()
+
+        assert count == 4
+        conn.rollback()
