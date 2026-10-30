@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import Engine, create_engine
 
 from notibondi.config import get_settings
 
