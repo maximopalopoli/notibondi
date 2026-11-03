@@ -83,17 +83,34 @@ def load_trips(conn: Connection, zf: zipfile.ZipFile) -> None:
     )
 
 
+def load_stop_times(conn: Connection, zf: zipfile.ZipFile) -> None:
+    """Stream stop_times.txt into the table with COPY.
+
+    The file has ~29M rows, too many for a list of dicts and an executemany:
+    rows go to Postgres one by one as they are read from the zip.
+    """
+    # Same connection SQLAlchemy uses, so COPY runs in the caller's transaction
+    raw_conn = conn.connection.driver_connection
+    with (
+        raw_conn.cursor() as cur,
+        cur.copy("COPY stop_times (trip_id, stop_id) FROM STDIN") as copy,
+    ):
+        for row in read_csv(zf, "stop_times.txt"):
+            copy.write_row((row["trip_id"], row["stop_id"]))
+
+
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
-    conn.execute(text("TRUNCATE stops, routes, trips"))
+    conn.execute(text("TRUNCATE stops, routes, trips, stop_times"))
 
     with zipfile.ZipFile(zip_path) as zf:
         load_stops(conn, zf)
         load_routes(conn, zf)
         load_trips(conn, zf)
+        load_stop_times(conn, zf)
 
-    conn.execute(text("ANALYZE stops, routes, trips"))
+    conn.execute(text("ANALYZE stops, routes, trips, stop_times"))
 
 
 if __name__ == "__main__":

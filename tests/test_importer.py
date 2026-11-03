@@ -81,3 +81,26 @@ def test_import_links_trips_to_their_route(db_engine, gtfs_zip):
 
         assert line == "505R3"
         conn.rollback()
+
+
+def test_import_loads_stop_times(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM stop_times")).scalar()
+
+        assert count == 10
+        conn.rollback()
+
+
+def test_import_twice_does_not_duplicate_stop_times(db_engine, gtfs_zip):
+    # stop_times has no primary key, so a missing TRUNCATE would duplicate
+    # rows silently instead of failing
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM stop_times")).scalar()
+
+        assert count == 10
+        conn.rollback()
