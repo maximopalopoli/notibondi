@@ -99,18 +99,31 @@ def load_stop_times(conn: Connection, zf: zipfile.ZipFile) -> None:
             copy.write_row((row["trip_id"], row["stop_id"]))
 
 
+def build_stop_routes(conn: Connection) -> None:
+    """Precompute which routes serve each stop, from stop_times and trips."""
+    conn.execute(
+        text("""
+            INSERT INTO stop_routes (stop_id, route_id)
+            SELECT DISTINCT st.stop_id, t.route_id
+            FROM stop_times st
+            JOIN trips t ON t.trip_id = st.trip_id
+        """)
+    )
+
+
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
-    conn.execute(text("TRUNCATE stops, routes, trips, stop_times"))
+    conn.execute(text("TRUNCATE stops, routes, trips, stop_times, stop_routes"))
 
     with zipfile.ZipFile(zip_path) as zf:
         load_stops(conn, zf)
         load_routes(conn, zf)
         load_trips(conn, zf)
         load_stop_times(conn, zf)
+        build_stop_routes(conn)
 
-    conn.execute(text("ANALYZE stops, routes, trips, stop_times"))
+    conn.execute(text("ANALYZE stops, routes, trips, stop_times, stop_routes"))
 
 
 if __name__ == "__main__":

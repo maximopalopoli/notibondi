@@ -104,3 +104,36 @@ def test_import_twice_does_not_duplicate_stop_times(db_engine, gtfs_zip):
 
         assert count == 10
         conn.rollback()
+
+
+def test_import_builds_one_stop_route_per_pair(db_engine, gtfs_zip):
+    # The fixture has 10 stop_times but only 5 distinct (stop, route) pairs
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM stop_routes")).scalar()
+
+        assert count == 5
+        conn.rollback()
+
+
+def test_import_lists_every_route_of_a_stop(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        lines = (
+            conn.execute(
+                text("""
+                SELECT r.route_short_name
+                FROM stop_routes sr
+                JOIN routes r ON r.route_id = sr.route_id
+                WHERE sr.stop_id = '6490106165'
+                ORDER BY r.route_short_name
+            """)
+            )
+            .scalars()
+            .all()
+        )
+
+        assert lines == ["152A", "505R3"]
+        conn.rollback()
