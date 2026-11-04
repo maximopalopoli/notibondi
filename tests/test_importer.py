@@ -1,19 +1,7 @@
-import shutil
-from pathlib import Path
-
 import pytest
 from sqlalchemy import text
 
 from notibondi.importer import import_gtfs
-
-FIXTURE_DIR = Path(__file__).parent / "fixtures" / "gtfs-mini"
-
-
-@pytest.fixture
-def gtfs_zip(tmp_path):
-    """Zip the mini GTFS fixture and return the path to the archive."""
-    archive = shutil.make_archive(str(tmp_path / "gtfs"), "zip", root_dir=FIXTURE_DIR)
-    return Path(archive)
 
 
 def test_import_loads_all_stops(db_engine, gtfs_zip):
