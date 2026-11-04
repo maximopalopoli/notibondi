@@ -88,3 +88,42 @@ def test_nearby_endpoint_returns_empty_list_when_nothing_is_close(client):
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+# Validation of GET /api/v1/stops/nearby
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"lat": 91, "lon": -58.421}, "lat"),
+        ({"lat": -91, "lon": -58.421}, "lat"),
+        ({"lat": -34.581, "lon": 181}, "lon"),
+        ({"lat": -34.581, "lon": -181}, "lon"),
+        ({**PLAZA_ITALIA, "radius": -5}, "radius"),
+        ({**PLAZA_ITALIA, "radius": 0}, "radius"),
+        ({**PLAZA_ITALIA, "radius": 1501}, "radius"),
+    ],
+)
+def test_nearby_endpoint_rejects_out_of_range_params(client, params, field):
+    response = client.get("/api/v1/stops/nearby", params=params)
+
+    assert response.status_code == 422
+    # The error must point at the bad param, not at something else
+    assert [e["loc"] for e in response.json()["detail"]] == [["query", field]]
+
+
+def test_nearby_endpoint_requires_lat_and_lon(client):
+    response = client.get("/api/v1/stops/nearby")
+
+    assert response.status_code == 422
+    fields = {e["loc"][-1] for e in response.json()["detail"]}
+    assert fields == {"lat", "lon"}
+
+
+def test_nearby_endpoint_accepts_max_radius(client):
+    response = client.get(
+        "/api/v1/stops/nearby", params={**PLAZA_ITALIA, "radius": 1500}
+    )
+
+    assert response.status_code == 200
