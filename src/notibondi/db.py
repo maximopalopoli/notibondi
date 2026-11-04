@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from functools import lru_cache
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import Connection, Engine, create_engine
 
 from notibondi.config import get_settings
@@ -9,6 +11,9 @@ from notibondi.config import get_settings
 def get_conn() -> Iterator[Connection]:
     with get_engine().connect() as conn:
         yield conn
+
+
+Conn = Annotated[Connection, Depends(get_conn)]
 
 
 @lru_cache
