@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from sqlalchemy import Connection, text
 
+MAX_RADIUS_M = 1500
+
 
 class NearbyStop(BaseModel):
     stop_id: str

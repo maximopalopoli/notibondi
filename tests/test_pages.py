@@ -41,3 +41,17 @@ def test_index_is_not_in_api_docs():
     paths = client.get("/openapi.json").json()["paths"]
 
     assert "/" not in paths
+
+
+def test_index_loads_location_script_and_stops_container():
+    html = client.get("/").text
+
+    assert "/static/location.js" in html
+    assert 'id="stops"' in html
+
+
+def test_static_serves_location_script():
+    response = client.get("/static/location.js")
+
+    assert response.status_code == 200
+    assert "/partials/stops/nearby" in response.text

@@ -127,3 +127,51 @@ def test_nearby_endpoint_accepts_max_radius(client):
     )
 
     assert response.status_code == 200
+
+
+# GET /partials/stops/nearby
+
+
+def test_nearby_partial_returns_html(client):
+    response = client.get("/partials/stops/nearby", params=PLAZA_ITALIA)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
+def test_nearby_partial_is_a_fragment(client):
+    # htmx swaps it into #stops, so a whole page would nest <html> in a div
+    html = client.get("/partials/stops/nearby", params=PLAZA_ITALIA).text
+
+    assert "<html" not in html
+    assert "<head" not in html
+
+
+def test_nearby_partial_lists_stops_in_order(client):
+    html = client.get("/partials/stops/nearby", params=PLAZA_ITALIA).text
+
+    names = ["PLAZA ITALIA", "AVENIDA SARMIENTO 2601", "AVENIDA EVA PERÓN 1249-1299"]
+    positions = [html.index(name) for name in names]
+    assert positions == sorted(positions)
+    assert "AVENIDA HIPÓLITO YRIGOYEN 12036" not in html
+
+
+def test_nearby_partial_shows_distance_and_lines(client):
+    html = client.get("/partials/stops/nearby", params=PLAZA_ITALIA).text
+
+    assert "0 m" in html
+    assert "<li>152A</li>" in html
+    assert "<li>505R3</li>" in html
+
+
+def test_nearby_partial_shows_message_when_nothing_is_close(client):
+    response = client.get("/partials/stops/nearby", params=NOWHERE)
+
+    assert response.status_code == 200
+    assert "No hay paradas cerca." in response.text
+
+
+def test_nearby_partial_validates_params(client):
+    response = client.get("/partials/stops/nearby", params={"lat": 91, "lon": 0})
+
+    assert response.status_code == 422

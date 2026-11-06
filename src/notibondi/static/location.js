@@ -1,6 +1,6 @@
 navigator.geolocation.getCurrentPosition(
   (position) => {
-    htmx.ajax("GET", "/api/v1/stops/nearby", {
+    htmx.ajax("GET", "/partials/stops/nearby", {
       target: "#stops",
       values: { lat: position.coords.latitude, lon: position.coords.longitude },
     });
