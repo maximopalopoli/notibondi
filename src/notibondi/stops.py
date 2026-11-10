@@ -19,7 +19,10 @@ def find_nearby_stops(
             SELECT s.stop_id,
                 s.stop_name,
                 ROUND(ST_Distance(s.geom, p.geom))::int AS distance_m,
-                array_agg(r.route_short_name ORDER BY r.route_short_name) AS lines
+                array_remove(
+                    array_agg(r.route_short_name ORDER BY r.route_short_name),
+                    NULL
+                ) AS lines
             FROM stops s
             CROSS JOIN (SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography AS geom) p
             LEFT JOIN stop_routes sr ON sr.stop_id = s.stop_id

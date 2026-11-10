@@ -175,3 +175,36 @@ def test_nearby_partial_validates_params(client):
     response = client.get("/partials/stops/nearby", params={"lat": 91, "lon": 0})
 
     assert response.status_code == 422
+
+
+# Only the stop without lines is within 400 m of this point
+NO_LINES_STOP = {"lat": -34.64, "lon": -58.48}
+
+
+def test_find_nearby_stops_returns_empty_lines_for_stop_without_routes(conn):
+    # The LEFT JOIN gives one row with a NULL route, and array_agg would turn
+    # it into [None], which list[str] rejects
+    stops = find_nearby_stops(conn, radius=400, **NO_LINES_STOP)
+
+    assert [(s.stop_id, s.lines) for s in stops] == [("999001", [])]
+
+
+def test_nearby_endpoint_returns_empty_lines_for_stop_without_routes(client):
+    response = client.get("/api/v1/stops/nearby", params=NO_LINES_STOP)
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "stop_id": "999001",
+            "stop_name": "PARADA SIN LINEAS",
+            "distance_m": 0,
+            "lines": [],
+        }
+    ]
+
+
+def test_nearby_partial_renders_stop_without_routes(client):
+    response = client.get("/partials/stops/nearby", params=NO_LINES_STOP)
+
+    assert response.status_code == 200
+    assert "PARADA SIN LINEAS" in response.text
