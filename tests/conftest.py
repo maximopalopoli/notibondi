@@ -45,6 +45,12 @@ def gtfs_zip(tmp_path_factory):
 
 
 @pytest.fixture
+def conn(db_engine, gtfs_loaded):
+    with db_engine.connect() as conn:
+        yield conn
+
+
+@pytest.fixture
 def client(db_engine, gtfs_loaded):
     def override():
         with db_engine.connect() as conn:

@@ -9,12 +9,6 @@ PLAZA_ITALIA = {"lat": -34.581, "lon": -58.421}
 NOWHERE = {"lat": -34.7, "lon": -58.6}
 
 
-@pytest.fixture
-def conn(db_engine, gtfs_loaded):
-    with db_engine.connect() as conn:
-        yield conn
-
-
 # find_nearby_stops
 
 

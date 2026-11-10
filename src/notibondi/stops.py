@@ -2,13 +2,17 @@ from pydantic import BaseModel
 from sqlalchemy import Connection, text
 
 MAX_RADIUS_M = 1500
+MAX_SEARCH_LIMIT = 100
 
 
-class NearbyStop(BaseModel):
+class Stop(BaseModel):
     stop_id: str
     stop_name: str
-    distance_m: int
     lines: list[str]
+
+
+class NearbyStop(Stop):
+    distance_m: int
 
 
 def find_nearby_stops(
@@ -35,3 +39,28 @@ def find_nearby_stops(
     )
 
     return [NearbyStop(**row._mapping) for row in rows]
+
+
+def search_stops(conn: Connection, q: str, limit: int) -> list[Stop]:
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    rows = conn.execute(
+        text("""
+            SELECT s.stop_id,
+                s.stop_name,
+                array_remove(
+                    array_agg(r.route_short_name ORDER BY r.route_short_name),
+                    NULL
+                ) AS lines
+            FROM stops s
+            LEFT JOIN stop_routes sr ON sr.stop_id = s.stop_id
+            LEFT JOIN routes r ON r.route_id = sr.route_id
+            WHERE s.stop_name ILIKE :pattern
+            GROUP BY s.stop_id, s.stop_name
+            ORDER BY s.stop_name, s.stop_id
+            LIMIT :limit
+        """),
+        {"pattern": f"%{escaped}%", "limit": limit},
+    )
+
+    return [Stop(**row._mapping) for row in rows]

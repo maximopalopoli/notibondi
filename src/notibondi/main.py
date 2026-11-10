@@ -7,7 +7,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from notibondi.db import Conn
-from notibondi.stops import MAX_RADIUS_M, NearbyStop, find_nearby_stops
+from notibondi.stops import (
+    MAX_RADIUS_M,
+    MAX_SEARCH_LIMIT,
+    NearbyStop,
+    Stop,
+    find_nearby_stops,
+    search_stops,
+)
 
 app = FastAPI()
 
@@ -49,3 +56,12 @@ def nearby_stops_partial(
     return templates.TemplateResponse(
         request, "partials/nearby_stops.html", {"stops": stops}
     )
+
+
+Q = Annotated[str, Query(min_length=2, max_length=100)]
+Limit = Annotated[int, Query(gt=0, le=MAX_SEARCH_LIMIT)]
+
+
+@app.get("/api/v1/stops/search", response_model=list[Stop])
+def search_stops_api(q: Q, conn: Conn, limit: Limit = 20):
+    return search_stops(conn, q, limit)
