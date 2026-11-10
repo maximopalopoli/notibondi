@@ -55,3 +55,11 @@ def test_static_serves_location_script():
 
     assert response.status_code == 200
     assert "/partials/stops/nearby" in response.text
+
+
+def test_index_shows_a_loading_message_before_the_stops_arrive():
+    # Without it, the page is blank while the browser asks for the location,
+    # and "loading" looks the same as "broken"
+    html = client.get("/").text
+
+    assert "Buscando paradas cerca tuyo…" in html
