@@ -46,19 +46,24 @@ def search_stops(conn: Connection, q: str, limit: int) -> list[Stop]:
 
     rows = conn.execute(
         text("""
-            SELECT s.stop_id,
-                s.stop_name,
+            WITH matches AS (
+                SELECT stop_id, stop_name
+                FROM stops
+                WHERE stop_name ILIKE :pattern
+                ORDER BY stop_name, stop_id
+                LIMIT :limit
+            )
+            SELECT m.stop_id,
+                m.stop_name,
                 array_remove(
                     array_agg(r.route_short_name ORDER BY r.route_short_name),
                     NULL
                 ) AS lines
-            FROM stops s
-            LEFT JOIN stop_routes sr ON sr.stop_id = s.stop_id
+            FROM matches m
+            LEFT JOIN stop_routes sr ON sr.stop_id = m.stop_id
             LEFT JOIN routes r ON r.route_id = sr.route_id
-            WHERE s.stop_name ILIKE :pattern
-            GROUP BY s.stop_id, s.stop_name
-            ORDER BY s.stop_name, s.stop_id
-            LIMIT :limit
+            GROUP BY m.stop_id, m.stop_name
+            ORDER BY m.stop_name, m.stop_id
         """),
         {"pattern": f"%{escaped}%", "limit": limit},
     )
