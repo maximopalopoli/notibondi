@@ -6,6 +6,9 @@ up:
 migrate:
 	uv run alembic upgrade head
 
+import:
+	uv run python -m notibondi.importer data/gtfs.zip
+
 dev:
 	uv run uvicorn notibondi.main:app --reload
 

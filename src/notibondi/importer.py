@@ -13,7 +13,7 @@ from notibondi.db import get_engine
 
 def read_csv(zf: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     with zf.open(name) as raw:
-        text_file = io.TextIOWrapper(raw, encoding="utf-8", newline="")
+        text_file = io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")
         yield from csv.DictReader(text_file)
 
 

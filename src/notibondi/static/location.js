@@ -16,7 +16,7 @@ document.body.addEventListener("htmx:responseError", () => {
   showError("Hubo un problema en el servidor. Probá de nuevo en un rato.");
 });
 document.body.addEventListener("htmx:sendError", () => {
-  showError("Hubo un problema en la conexión con el servidor. Probá de nuevo en un rato.");
+  showError("No hay conexión. Revisá tu internet y probá de nuevo.");
 });
 
 if (!navigator.geolocation) {

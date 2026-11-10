@@ -10,7 +10,7 @@ def test_import_loads_all_stops(db_engine, gtfs_zip):
 
         count = conn.execute(text("SELECT count(*) FROM stops")).scalar()
 
-        assert count == 4
+        assert count == 5
         conn.rollback()
 
 
@@ -38,7 +38,7 @@ def test_import_twice_does_not_duplicate_stops(db_engine, gtfs_zip):
 
         count = conn.execute(text("SELECT count(*) FROM stops")).scalar()
 
-        assert count == 4
+        assert count == 5
         conn.rollback()
 
 
