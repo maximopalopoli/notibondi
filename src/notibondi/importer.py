@@ -4,6 +4,7 @@ import sys
 import time
 import zipfile
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import Connection, text
@@ -67,16 +68,20 @@ def load_trips(conn: Connection, zf: zipfile.ZipFile) -> None:
         {
             "trip_id": row["trip_id"],
             "route_id": row["route_id"],
+            "service_id": row["service_id"],
+            "trip_headsign": row["trip_headsign"],
         }
         for row in read_csv(zf, "trips.txt")
     ]
 
     conn.execute(
         text("""
-            INSERT INTO trips (trip_id, route_id)
+            INSERT INTO trips (trip_id, route_id, service_id, trip_headsign)
             VALUES (
                 :trip_id,
-                :route_id
+                :route_id,
+                :service_id,
+                :trip_headsign
             )
         """),
         rows,
@@ -93,10 +98,10 @@ def load_stop_times(conn: Connection, zf: zipfile.ZipFile) -> None:
     raw_conn = conn.connection.driver_connection
     with (
         raw_conn.cursor() as cur,
-        cur.copy("COPY stop_times (trip_id, stop_id) FROM STDIN") as copy,
+        cur.copy("COPY stop_times (trip_id, stop_id, arrival_time) FROM STDIN") as copy,
     ):
         for row in read_csv(zf, "stop_times.txt"):
-            copy.write_row((row["trip_id"], row["stop_id"]))
+            copy.write_row((row["trip_id"], row["stop_id"], row["arrival_time"]))
 
 
 def build_stop_routes(conn: Connection) -> None:
@@ -111,10 +116,35 @@ def build_stop_routes(conn: Connection) -> None:
     )
 
 
+def load_calendar_dates(conn: Connection, zf: zipfile.ZipFile) -> None:
+    rows = [
+        {
+            "service_id": row["service_id"],
+            "service_date": datetime.strptime(row["date"], "%Y%m%d").date(),
+            "exception_type": int(row["exception_type"]),
+        }
+        for row in read_csv(zf, "calendar_dates.txt")
+    ]
+
+    conn.execute(
+        text("""
+            INSERT INTO calendar_dates (service_id, service_date, exception_type)
+            VALUES (
+                :service_id,
+                :service_date,
+                :exception_type
+            )
+        """),
+        rows,
+    )
+
+
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
-    conn.execute(text("TRUNCATE stops, routes, trips, stop_times, stop_routes"))
+    conn.execute(
+        text("TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates")
+    )
 
     with zipfile.ZipFile(zip_path) as zf:
         load_stops(conn, zf)
@@ -122,8 +152,11 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
         load_trips(conn, zf)
         load_stop_times(conn, zf)
         build_stop_routes(conn)
+        load_calendar_dates(conn, zf)
 
-    conn.execute(text("ANALYZE stops, routes, trips, stop_times, stop_routes"))
+    conn.execute(
+        text("ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates")
+    )
 
 
 if __name__ == "__main__":
