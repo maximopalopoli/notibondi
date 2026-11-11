@@ -54,7 +54,9 @@ def nearby_stops_partial(
 ):
     stops = find_nearby_stops(conn, lat, lon, radius)
     return templates.TemplateResponse(
-        request, "partials/nearby_stops.html", {"stops": stops}
+        request,
+        "partials/stops.html",
+        {"stops": stops, "empty_message": "No hay paradas cerca."},
     )
 
 
@@ -65,3 +67,18 @@ Limit = Annotated[int, Query(gt=0, le=MAX_SEARCH_LIMIT)]
 @app.get("/api/v1/stops/search", response_model=list[Stop])
 def search_stops_api(q: Q, conn: Conn, limit: Limit = 20):
     return search_stops(conn, q, limit)
+
+
+@app.get("/partials/stops/search", response_class=HTMLResponse, include_in_schema=False)
+def search_stops_partial(
+    request: Request, conn: Conn, q: Annotated[str, Query(max_length=100)] = ""
+):
+    q = q.strip()
+    if len(q) < 2:
+        return HTMLResponse("")
+    stops = search_stops(conn, q, 20)
+    return templates.TemplateResponse(
+        request,
+        "partials/stops.html",
+        {"stops": stops, "empty_message": "No se encontraron paradas con ese nombre."},
+    )

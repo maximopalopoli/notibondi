@@ -128,3 +128,68 @@ def test_search_endpoint_accepts_max_limit(client):
     )
 
     assert response.status_code == 200
+
+
+# GET /partials/stops/search
+
+
+def test_search_partial_returns_html_fragment(client):
+    response = client.get("/partials/stops/search", params={"q": "plaza italia"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<html" not in response.text
+
+
+def test_search_partial_lists_stops_with_lines_and_no_distance(client):
+    html = client.get("/partials/stops/search", params={"q": "plaza italia"}).text
+
+    assert "PLAZA ITALIA" in html
+    assert "<li>152A</li>" in html
+    assert "<li>505R3</li>" in html
+    # A search has no reference point, so there is no distance to show
+    assert 'class="distance"' not in html
+
+
+def test_search_partial_lists_stops_in_name_order(client):
+    html = client.get("/partials/stops/search", params={"q": "avenida"}).text
+
+    positions = [html.index(name) for name in AVENIDAS]
+    assert positions == sorted(positions)
+
+
+def test_search_partial_shows_message_when_nothing_matches(client):
+    response = client.get("/partials/stops/search", params={"q": "constitucion"})
+
+    assert response.status_code == 200
+    assert "No se encontraron paradas con ese nombre." in response.text
+
+
+@pytest.mark.parametrize("q", ["", "a", "   ", " a "])
+def test_search_partial_is_empty_while_the_query_is_too_short(client, q):
+    # The input fires while typing or after clearing it: that is not an error,
+    # and there is nothing to say yet
+    response = client.get("/partials/stops/search", params={"q": q})
+
+    assert response.status_code == 200
+    assert response.text == ""
+
+
+def test_search_partial_is_empty_without_q(client):
+    response = client.get("/partials/stops/search")
+
+    assert response.status_code == 200
+    assert response.text == ""
+
+
+def test_search_partial_trims_spaces(client):
+    html = client.get("/partials/stops/search", params={"q": "  plaza italia  "}).text
+
+    assert "PLAZA ITALIA" in html
+
+
+def test_search_partial_is_not_in_api_docs(client):
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/partials/stops/search" not in paths
+    assert "/api/v1/stops/search" in paths

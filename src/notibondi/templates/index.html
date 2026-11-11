@@ -6,5 +6,15 @@
 
 {% block content %}
 <h1>notibondi</h1>
+
+<label for="search">Buscar parada</label>
+<input type="search" id="search" name="q" maxlength="100"
+       placeholder="Ej: plaza italia" autocomplete="off"
+       hx-get="/partials/stops/search"
+       hx-trigger="input changed delay:300ms, search"
+       hx-target="#search-results"
+       hx-sync="this:replace">
+<div id="search-results"></div>
+
 <div id="stops"><p>Buscando paradas cerca tuyo…</p></div>
 {% endblock %}

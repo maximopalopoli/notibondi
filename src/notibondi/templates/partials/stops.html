@@ -2,12 +2,12 @@
   {% for stop in stops %}
   <li>
     <strong>{{ stop.stop_name }}</strong>
-    <span class="distance">{{ stop.distance_m }} m</span>
+    {% if stop.distance_m is defined %}<span class="distance">{{ stop.distance_m }} m</span>{% endif %}
     <ul class="lines">
       {% for line in stop.lines %}<li>{{ line }}</li>{% endfor %}
     </ul>
   </li>
   {% else %}
-  <li>No hay paradas cerca.</li>
+  <li> {{ empty_message }} </li>
   {% endfor %}
 </ul>

@@ -4,23 +4,32 @@ const MESSAGES = {
   3: "Tardó demasiado en obtener tu ubicación.",        // TIMEOUT
 };
 
-function showError(message) {
+function showError(target, message) {
   const p = document.createElement("p");
   p.className = "error";
   p.setAttribute("role", "alert");
   p.textContent = message;
-  document.querySelector("#stops").replaceChildren(p);
+  target.replaceChildren(p);
 }
 
-document.body.addEventListener("htmx:responseError", () => {
-  showError("Hubo un problema en el servidor. Probá de nuevo en un rato.");
+// Without the location, searching by name is the other way to find a stop
+function locationFailed(message) {
+  showError(
+    document.querySelector("#stops"),
+    `${message} Podés buscar una parada por nombre.`,
+  );
+  document.querySelector("#search").focus();
+}
+
+document.body.addEventListener("htmx:responseError", (event) => {
+  showError(event.detail.target, "Hubo un problema en el servidor. Probá de nuevo en un rato.");
 });
-document.body.addEventListener("htmx:sendError", () => {
-  showError("No hay conexión. Revisá tu internet y probá de nuevo.");
+document.body.addEventListener("htmx:sendError", (event) => {
+  showError(event.detail.target, "No hay conexión. Revisá tu internet y probá de nuevo.");
 });
 
 if (!navigator.geolocation) {
-  showError("Tu navegador no permite usar la ubicación.");
+  locationFailed("Tu navegador no permite usar la ubicación.");
 } else {
   navigator.geolocation.getCurrentPosition(
     (position) => {
@@ -29,7 +38,7 @@ if (!navigator.geolocation) {
         values: { lat: position.coords.latitude, lon: position.coords.longitude },
       });
     },
-    (error) => showError(MESSAGES[error.code]),
+    (error) => locationFailed(MESSAGES[error.code]),
     { timeout: 10000, maximumAge: 60000 },
   );
 }

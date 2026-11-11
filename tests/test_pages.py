@@ -63,3 +63,13 @@ def test_index_shows_a_loading_message_before_the_stops_arrive():
     html = client.get("/").text
 
     assert "Buscando paradas cerca tuyo…" in html
+
+
+def test_index_has_search_input_wired_to_the_partial():
+    html = client.get("/").text
+
+    assert 'id="search"' in html
+    assert 'name="q"' in html
+    assert 'hx-get="/partials/stops/search"' in html
+    assert 'hx-target="#search-results"' in html
+    assert 'id="search-results"' in html
