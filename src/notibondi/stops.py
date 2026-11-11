@@ -69,3 +69,10 @@ def search_stops(conn: Connection, q: str, limit: int) -> list[Stop]:
     )
 
     return [Stop(**row._mapping) for row in rows]
+
+
+def stop_exists(conn: Connection, stop_id: str) -> bool:
+    return conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM stops WHERE stop_id = :stop_id)"),
+        {"stop_id": stop_id},
+    ).scalar()

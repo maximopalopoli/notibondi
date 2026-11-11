@@ -1,12 +1,14 @@
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from notibondi.db import Conn
+from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
     MAX_SEARCH_LIMIT,
@@ -14,6 +16,7 @@ from notibondi.stops import (
     Stop,
     find_nearby_stops,
     search_stops,
+    stop_exists,
 )
 
 app = FastAPI()
@@ -82,3 +85,17 @@ def search_stops_partial(
         "partials/stops.html",
         {"stops": stops, "empty_message": "No se encontraron paradas con ese nombre."},
     )
+
+
+def current_time() -> datetime:
+    return now()
+
+
+Now = Annotated[datetime, Depends(current_time)]
+
+
+@app.get("/api/v1/stops/{stop_id}/arrivals", response_model=list[Arrival])
+def stop_arrivals(stop_id: str, conn: Conn, at: Now):
+    if not stop_exists(conn, stop_id):
+        raise HTTPException(status_code=404, detail="Stop not found")
+    return next_arrivals(conn, stop_id, at)
