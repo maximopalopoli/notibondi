@@ -1,4 +1,4 @@
-.PHONY: up migrate dev lint test check fmt
+.PHONY: up migrate import dev lint test check fmt pilot
 
 up:
 	docker compose up -d --wait
@@ -24,3 +24,6 @@ check: lint test
 fmt:
 	uv run ruff check --fix .
 	uv run ruff format .
+
+pilot:
+	uv run --group pilot python pilot/recorder.py
