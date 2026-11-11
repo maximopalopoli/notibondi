@@ -52,7 +52,7 @@ def test_import_loads_routes_and_trips(db_engine, gtfs_zip):
         trips = conn.execute(text("SELECT count(*) FROM trips")).scalar()
 
         assert routes == 2
-        assert trips == 4
+        assert trips == 5
         conn.rollback()
 
 
@@ -79,7 +79,7 @@ def test_import_loads_stop_times(db_engine, gtfs_zip):
 
         count = conn.execute(text("SELECT count(*) FROM stop_times")).scalar()
 
-        assert count == 10
+        assert count == 11
         conn.rollback()
 
 
@@ -92,12 +92,12 @@ def test_import_twice_does_not_duplicate_stop_times(db_engine, gtfs_zip):
 
         count = conn.execute(text("SELECT count(*) FROM stop_times")).scalar()
 
-        assert count == 10
+        assert count == 11
         conn.rollback()
 
 
 def test_import_builds_one_stop_route_per_pair(db_engine, gtfs_zip):
-    # The fixture has 10 stop_times but only 5 distinct (stop, route) pairs
+    # The fixture has 11 stop_times but only 5 distinct (stop, route) pairs
     with db_engine.connect() as conn:
         import_gtfs(conn, gtfs_zip)
 
@@ -146,6 +146,7 @@ def test_import_stores_service_and_headsign_of_trips(db_engine, gtfs_zip):
             ("2-1", "1", "a Olivos"),
             ("3-1", "3", "a Merlo"),
             ("4-1", "3", "a Merlo"),
+            ("5-1", "3", "a Merlo"),
         ]
         conn.rollback()
 

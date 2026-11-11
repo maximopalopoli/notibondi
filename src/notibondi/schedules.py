@@ -1,9 +1,16 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from sqlalchemy import Connection, text
+
+DAY_SECONDS = 24 * 3600
+WINDOW_SECONDS = 90 * 60
+# Yesterday's trips count until 30:00:00 (06:00 today); later times in the
+# feed are broken trips that would show up as phantom arrivals.
+MAX_SERVICE_SECONDS = 30 * 3600
+MAX_ARRIVALS = 20
 
 BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -30,14 +37,10 @@ def from_gtfs_time(value: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def next_arrivals(conn: Connection, stop_id: str, at: datetime) -> list[Arrival]:
-    service = service_for(conn, at.date())
-    if service is None:
-        return []
-
-    start = at.hour * 3600 + at.minute * 60 + at.second
-    end = start + 90 * 60
-
+def _arrivals_in_service(
+    conn: Connection, stop_id: str, service_id: str, start: int, end: int
+) -> list[tuple[int, str, str]]:
+    """(seconds until arrival, line, headsign) for one service and window."""
     rows = conn.execute(
         text("""
             SELECT r.route_short_name AS line, t.trip_headsign AS headsign, st.arrival_time
@@ -48,23 +51,52 @@ def next_arrivals(conn: Connection, stop_id: str, at: datetime) -> list[Arrival]
             AND t.service_id = :service_id
             AND st.arrival_time >= :start AND st.arrival_time < :end
             ORDER BY st.arrival_time, r.route_short_name
-            LIMIT 20
+            LIMIT :limit
         """),
         {
             "stop_id": stop_id,
-            "service_id": service,
+            "service_id": service_id,
             "start": to_gtfs_time(start),
             "end": to_gtfs_time(end),
+            "limit": MAX_ARRIVALS,
         },
     )
-
     return [
-        Arrival(
-            line=row.line,
-            headsign=row.headsign,
-            minutes=(from_gtfs_time(row.arrival_time) - start) // 60,
-        )
+        (from_gtfs_time(row.arrival_time) - start, row.line, row.headsign)
         for row in rows
+    ]
+
+
+def next_arrivals(conn: Connection, stop_id: str, at: datetime) -> list[Arrival]:
+    """Scheduled arrivals in the next 90 minutes.
+
+    Trips belong to the service day they start on, so after midnight the
+    buses of yesterday's service still running show up as 24:xx:xx times.
+    """
+    at = at.astimezone(BUENOS_AIRES)
+    today = at.date()
+    start = at.hour * 3600 + at.minute * 60 + at.second
+    end = start + WINDOW_SECONDS
+
+    found = []
+
+    service = service_for(conn, today)
+    if service is not None:
+        found += _arrivals_in_service(conn, stop_id, service, start, end)
+
+    yesterday_start = start + DAY_SECONDS
+    yesterday_end = min(end + DAY_SECONDS, MAX_SERVICE_SECONDS)
+    if yesterday_start < yesterday_end:
+        service = service_for(conn, today - timedelta(days=1))
+        if service is not None:
+            found += _arrivals_in_service(
+                conn, stop_id, service, yesterday_start, yesterday_end
+            )
+
+    found.sort()
+    return [
+        Arrival(line=line, headsign=headsign, minutes=seconds // 60)
+        for seconds, line, headsign in found[:MAX_ARRIVALS]
     ]
 
 

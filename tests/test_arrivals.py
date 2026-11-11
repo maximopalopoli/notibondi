@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -18,12 +18,13 @@ NO_LINES_STOP = "999001"
 def at(day: int, hour: int, minute: int = 0, second: int = 0) -> datetime:
     """A fixed time in November 2026, Buenos Aires time.
 
-    Nov 10 is a Tuesday, Nov 11 a Wednesday and Nov 14 a Saturday.
+    Nov 10 is a Tuesday, Nov 11 a Wednesday, Nov 14 a Saturday and Nov 15
+    a Sunday.
     """
     return datetime(2026, 11, day, hour, minute, second, tzinfo=BUENOS_AIRES)
 
 
-TUESDAY, WEDNESDAY, SATURDAY = 10, 11, 14
+TUESDAY, WEDNESDAY, SATURDAY, SUNDAY = 10, 11, 14, 15
 
 
 @pytest.fixture
@@ -110,6 +111,53 @@ def test_next_arrivals_of_a_stop_without_lines(conn):
     assert next_arrivals(conn, NO_LINES_STOP, at(TUESDAY, 8)) == []
 
 
+# The midnight trap: after midnight, yesterday's service is still running
+
+
+def test_next_arrivals_after_midnight_finds_yesterdays_late_trip(conn):
+    # Trip 4-1 of Tuesday's service passes at 24:40:00, which is Wednesday
+    # 00:40. The fixture has no Wednesday service, so it can only come from
+    # Tuesday's.
+    arrivals = next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 0, 30))
+
+    assert arrivals == [Arrival(line="505R3", headsign="a Merlo", minutes=10)]
+
+
+def test_next_arrivals_after_midnight_counts_minutes_from_now(conn):
+    assert [
+        a.minutes for a in next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 0, 40))
+    ] == [0]
+
+
+def test_next_arrivals_drops_yesterdays_trip_once_it_passed(conn):
+    assert next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 1)) == []
+
+
+def test_next_arrivals_after_midnight_uses_yesterdays_own_service(conn):
+    # Sunday 00:30: yesterday was Saturday (service 1), so Tuesday's 24:40
+    # trip of service 3 must not show up
+    assert next_arrivals(conn, PLAZA_ITALIA, at(SUNDAY, 0, 30)) == []
+
+
+def test_next_arrivals_ignores_yesterdays_times_past_30_hours(conn):
+    # Trip 5-1 is a broken trip at 30:10:00. At 05:00 yesterday's window
+    # would be 29:00 to 30:30, but it is capped at 30:00:00.
+    assert next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 5)) == []
+
+
+def test_next_arrivals_skips_yesterday_after_six_in_the_morning(conn):
+    # At 06:05 yesterday's window would start at 30:05:00, five minutes
+    # before the broken 30:10:00 trip
+    assert next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 6, 5)) == []
+
+
+def test_next_arrivals_converts_the_time_to_buenos_aires(conn):
+    # 03:30 UTC is 00:30 in Buenos Aires
+    utc = datetime(2026, 11, 11, 3, 30, tzinfo=UTC)
+
+    assert [a.minutes for a in next_arrivals(conn, PLAZA_ITALIA, utc)] == [10]
+
+
 # GET /api/v1/stops/{stop_id}/arrivals
 
 
@@ -151,3 +199,13 @@ def test_arrivals_endpoint_has_no_time_query_param(client):
     ]["get"]["parameters"]
 
     assert [p["name"] for p in params] == ["stop_id"]
+
+
+def test_arrivals_endpoint_after_midnight(client_at):
+    response = client_at(at(WEDNESDAY, 0, 30)).get(
+        f"/api/v1/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert response.json() == [
+        {"line": "505R3", "headsign": "a Merlo", "minutes": 10, "source": "scheduled"}
+    ]
