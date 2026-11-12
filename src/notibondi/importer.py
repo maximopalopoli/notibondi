@@ -142,6 +142,8 @@ def load_calendar_dates(conn: Connection, zf: zipfile.ZipFile) -> None:
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
+    conn.execute(text("DROP INDEX IF EXISTS stop_times_stop_arrival_idx"))
+
     conn.execute(
         text("TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates")
     )
@@ -153,6 +155,17 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
         load_stop_times(conn, zf)
         build_stop_routes(conn)
         load_calendar_dates(conn, zf)
+
+    # The index is dropped before the COPY and built again here because
+    # creating it once over the loaded rows is much faster than updating it
+    # row by row (about 145 s vs 230 s for the full import) and leaves it
+    # smaller (758 MB vs 990 MB). Keep the name and columns in sync with
+    # migration 0129aaefcc16.
+    conn.execute(
+        text(
+            "CREATE INDEX stop_times_stop_arrival_idx ON stop_times (stop_id, arrival_time)"
+        )
+    )
 
     conn.execute(
         text("ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates")
