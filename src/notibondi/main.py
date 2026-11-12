@@ -99,3 +99,18 @@ def stop_arrivals(stop_id: str, conn: Conn, at: Now):
     if not stop_exists(conn, stop_id):
         raise HTTPException(status_code=404, detail="Stop not found")
     return next_arrivals(conn, stop_id, at)
+
+
+@app.get(
+    "/partials/stops/{stop_id}/arrivals",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def stop_arrivals_partial(request: Request, stop_id: str, conn: Conn, at: Now):
+    if not stop_exists(conn, stop_id):
+        raise HTTPException(status_code=404, detail="Stop not found")
+    return templates.TemplateResponse(
+        request,
+        "partials/arrivals.html",
+        {"stop_id": stop_id, "arrivals": next_arrivals(conn, stop_id, at)},
+    )

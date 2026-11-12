@@ -1,0 +1,16 @@
+<div class="arrivals"
+     hx-get="/partials/stops/{{ stop_id }}/arrivals"
+     hx-trigger="every 30s"
+     hx-swap="outerHTML">
+  <ul>
+    {% for a in arrivals %}
+    <li>
+      <strong>{{ a.line }}</strong> {{ a.headsign }}
+      <span class="minutes">{% if a.minutes == 0 %}llegando{% else %}{{ a.minutes }} min{% endif %}</span>
+    </li>
+    {% else %}
+    <li>No hay colectivos programados en los próximos 90 minutos.</li>
+    {% endfor %}
+  </ul>
+  <p class="source">Según el horario programado</p>
+</div>

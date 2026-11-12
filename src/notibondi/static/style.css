@@ -12,13 +12,7 @@ body {
 }
 
 .stops > li {
-  padding: 0.75rem 0;
   border-bottom: 1px solid #ddd;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.25rem 1rem;
 }
 
 .distance {
@@ -45,4 +39,43 @@ body {
 
 .error {
   color: #b00020;
+}
+
+.stop {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.75rem 0;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+}
+
+.stop:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.arrivals {
+  margin: 0 0 0.75rem;
+}
+
+.arrivals ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.minutes {
+  float: right;
+  font-weight: bold;
+}
+
+.source {
+  color: #666;
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0;
 }

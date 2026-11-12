@@ -1,11 +1,16 @@
 <ul class="stops">
   {% for stop in stops %}
   <li>
-    <strong>{{ stop.stop_name }}</strong>
-    {% if stop.distance_m is defined %}<span class="distance">{{ stop.distance_m }} m</span>{% endif %}
-    <ul class="lines">
-      {% for line in stop.lines %}<li>{{ line }}</li>{% endfor %}
-    </ul>
+    <button type="button" class="stop"
+            hx-get="/partials/stops/{{ stop.stop_id }}/arrivals"
+            hx-target="next .arrivals-slot">
+      <strong>{{ stop.stop_name }}</strong>
+      {% if stop.distance_m is defined %}<span class="distance">{{ stop.distance_m }} m</span>{% endif %}
+      <ul class="lines">
+        {% for line in stop.lines %}<li>{{ line }}</li>{% endfor %}
+      </ul>
+    </button>
+    <div class="arrivals-slot"></div>
   </li>
   {% else %}
   <li> {{ empty_message }} </li>

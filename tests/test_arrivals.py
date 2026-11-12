@@ -209,3 +209,95 @@ def test_arrivals_endpoint_after_midnight(client_at):
     assert response.json() == [
         {"line": "505R3", "headsign": "a Merlo", "minutes": 10, "source": "scheduled"}
     ]
+
+
+# GET /partials/stops/{stop_id}/arrivals
+
+ARRIVALS_PARTIAL = f"/partials/stops/{PLAZA_ITALIA}/arrivals"
+
+
+def test_arrivals_partial_returns_an_html_fragment(client_at):
+    response = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    # htmx swaps it under the stop, so a whole page would nest <html> in a div
+    assert "<html" not in response.text
+
+
+def test_arrivals_partial_shows_line_headsign_and_minutes(client_at):
+    html = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
+
+    assert "<strong>152A</strong> a Olivos" in html
+    assert "5 min" in html
+    assert "Según el horario programado" in html
+
+
+def test_arrivals_partial_uses_the_injected_time(client_at):
+    html = client_at(at(TUESDAY, 23, 30)).get(ARRIVALS_PARTIAL).text
+
+    assert "<strong>505R3</strong> a Merlo" in html
+    assert "70 min" in html
+
+
+def test_arrivals_partial_says_arriving_instead_of_zero_minutes(client_at):
+    html = client_at(at(TUESDAY, 8, 5)).get(ARRIVALS_PARTIAL).text
+
+    assert "llegando" in html
+    assert "0 min" not in html
+
+
+def test_arrivals_partial_without_arrivals_shows_a_message(client_at):
+    # The fixture calendar has no Wednesdays
+    response = client_at(at(WEDNESDAY, 8)).get(ARRIVALS_PARTIAL)
+
+    assert response.status_code == 200
+    assert "No hay colectivos programados en los próximos 90 minutos." in response.text
+
+
+def test_arrivals_partial_returns_404_for_an_unknown_stop(client_at):
+    response = client_at(at(TUESDAY, 8)).get("/partials/stops/no-existe/arrivals")
+
+    assert response.status_code == 404
+
+
+def test_arrivals_partial_refreshes_itself_every_30_seconds(client_at):
+    # The polling lives on the partial's root and replaces it whole, so each
+    # response carries the next refresh, and it stops when the div is gone
+    html = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
+
+    assert f'hx-get="{ARRIVALS_PARTIAL}"' in html
+    assert 'hx-trigger="every 30s"' in html
+    assert 'hx-swap="outerHTML"' in html
+
+
+def test_arrivals_partial_minutes_go_down_on_refresh(client_at):
+    # The "done when" of the item: same page, later refresh, fewer minutes
+    assert "5 min" in client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
+    assert "4 min" in client_at(at(TUESDAY, 8, 1)).get(ARRIVALS_PARTIAL).text
+
+
+def test_arrivals_partial_is_not_in_the_api_docs(client):
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/partials/stops/{stop_id}/arrivals" not in paths
+
+
+# Stop lists: every stop is a button that loads its arrivals right below it
+
+
+@pytest.mark.parametrize(
+    ("url", "params"),
+    [
+        ("/partials/stops/search", {"q": "plaza italia"}),
+        ("/partials/stops/nearby", {"lat": -34.581, "lon": -58.421}),
+    ],
+)
+def test_stop_lists_load_the_arrivals_of_each_stop(client, url, params):
+    html = client.get(url, params=params).text
+
+    assert '<button type="button" class="stop"' in html
+    assert f'hx-get="{ARRIVALS_PARTIAL}"' in html
+    # Not an id: the same stop can be both in the search and nearby lists
+    assert 'hx-target="next .arrivals-slot"' in html
+    assert html.count('class="stop"') == html.count('class="arrivals-slot"')
