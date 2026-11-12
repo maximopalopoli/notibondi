@@ -23,7 +23,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Realtime route_ids for line 108 (Retiro - Liniers - V. Madero); they don't
 # match the static GTFS ids. The feed's headsigns ("a Belgrano (CABA)") are off.
 ROUTES = {"205": "108 Retiro -> Liniers/V. Madero", "206": "108 Liniers -> Retiro"}
-POLL_SECONDS = 30
+POLL_SECONDS = 60
 TIMEOUT_SECONDS = 15
 URL = "https://apitransporte.buenosaires.gob.ar/colectivos/tripUpdates"
 DEFAULT_DB = Path("data/pilot.sqlite")
@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS polls (
     feed_ts   INTEGER,
     route_id  TEXT NOT NULL,
     ok        INTEGER NOT NULL,
-    n_trips   INTEGER
+    n_trips   INTEGER,
+    error     TEXT
 );
 CREATE TABLE IF NOT EXISTS arrivals (
     trip_id       TEXT NOT NULL,
@@ -124,7 +125,8 @@ def poll(db: sqlite3.Connection, creds: Credentials, last_feed_ts: dict[str, int
             log.warning("route %s: %s", route_id, exc)
             with db:
                 db.execute(
-                    "INSERT INTO polls VALUES (?, NULL, ?, 0, NULL)", (now, route_id)
+                    "INSERT INTO polls VALUES (?, NULL, ?, 0, NULL, ?)",
+                    (now, route_id, f"{type(exc).__name__}: {exc}"),
                 )
             continue
 
@@ -132,7 +134,7 @@ def poll(db: sqlite3.Connection, creds: Credentials, last_feed_ts: dict[str, int
         n_trips = sum(1 for e in feed.entity if e.HasField("trip_update"))
         with db:
             db.execute(
-                "INSERT INTO polls VALUES (?, ?, ?, 1, ?)",
+                "INSERT INTO polls VALUES (?, ?, ?, 1, ?, NULL)",
                 (now, feed_ts, route_id, n_trips),
             )
             # Same header timestamp means the feed wasn't refreshed: nothing new.
@@ -152,6 +154,9 @@ def main() -> None:
     db = sqlite3.connect(db_path)
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
+    # Databases from before the error column was added
+    if "error" not in {row[1] for row in db.execute("PRAGMA table_info(polls)")}:
+        db.execute("ALTER TABLE polls ADD COLUMN error TEXT")
     log.info("recording %s into %s", ", ".join(ROUTES), db_path)
 
     last_feed_ts: dict[str, int] = {}
