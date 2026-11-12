@@ -29,4 +29,4 @@ fmt:
 	uv run ruff format .
 
 pilot:
-	uv run --group pilot python pilot/recorder.py
+	uv run python pilot/recorder.py

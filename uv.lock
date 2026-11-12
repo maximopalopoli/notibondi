@@ -323,6 +323,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "gtfs-realtime-bindings" },
     { name = "jinja2" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
@@ -337,14 +338,12 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
-pilot = [
-    { name = "gtfs-realtime-bindings" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "gtfs-realtime-bindings", specifier = ">=3.0.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
@@ -359,7 +358,6 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.17.3" },
 ]
-pilot = [{ name = "gtfs-realtime-bindings", specifier = ">=3.0.0" }]
 
 [[package]]
 name = "opentelemetry-api"
