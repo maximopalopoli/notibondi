@@ -1,4 +1,4 @@
-.PHONY: up migrate import dev lint test check fmt pilot
+.PHONY: up migrate import holidays dev lint test check fmt pilot
 
 up:
 	docker compose up -d --wait
@@ -8,6 +8,9 @@ migrate:
 
 import:
 	uv run python -m notibondi.importer data/gtfs.zip
+
+holidays:
+	uv run python -m notibondi.holidays holidays.csv
 
 dev:
 	uv run uvicorn notibondi.main:app --reload

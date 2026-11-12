@@ -7,10 +7,14 @@ from sqlalchemy import Connection, text
 
 DAY_SECONDS = 24 * 3600
 WINDOW_SECONDS = 90 * 60
+
 # Yesterday's trips count until 30:00:00 (06:00 today); later times in the
 # feed are broken trips that would show up as phantom arrivals.
 MAX_SERVICE_SECONDS = 30 * 3600
 MAX_ARRIVALS = 20
+
+# In the 2019 feed every holiday (12/10, 18/11, 8/12, 25/12) ran service 4
+HOLIDAY_SERVICE = "4"
 
 BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -101,13 +105,19 @@ def next_arrivals(conn: Connection, stop_id: str, at: datetime) -> list[Arrival]
 
 
 def service_for(conn: Connection, day: date) -> str | None:
-    """Return the service that runs on the same weekday as `day`.
+    """Return the service that runs on `day`.
 
-    The feed's calendar only covers late 2019, so the date itself is never
-    in it. Instead, pick the service most often used on that weekday there;
-    holidays and odd days lose to the regular one. None if no date in the
-    calendar falls on that weekday.
+    Holidays, loaded by hand into the holidays table, run HOLIDAY_SERVICE.
+    Any other day gets the service most often used on its weekday in the
+    feed's calendar, which only covers late 2019, so the date itself is
+    never in it. None if no date in the calendar falls on that weekday.
     """
+    is_holiday = conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM holidays WHERE holiday_date = :day)"),
+        {"day": day},
+    ).scalar()
+    if is_holiday:
+        return HOLIDAY_SERVICE
     return conn.execute(
         text("""
             SELECT service_id
