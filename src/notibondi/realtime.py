@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 
 from google.transit import gtfs_realtime_pb2
 from sqlalchemy import Connection, text
@@ -6,6 +7,50 @@ from sqlalchemy import Connection, text
 # A live route_id is a static line only if that line goes through at least
 # this share of the route's stops in the feed, and no other line ties with it.
 MIN_SHARE = 0.5
+
+# The feed sometimes reports a delay of ~84,500 s around midnight (a bug,
+# seen by the pilot). No real bus is 12 hours late, so those are dropped.
+MAX_DELAY_SECONDS = 12 * 60 * 60
+
+
+@dataclass(frozen=True)
+class LiveArrival:
+    line: str  # resolved by stops, e.g. "108A"
+    trip_id: str  # only meaningful inside the feed
+    arrival_time: int  # Unix seconds
+
+
+def build_index(
+    feed: gtfs_realtime_pb2.FeedMessage,
+    lines_by_stop: dict[str, set[str]],
+) -> dict[str, list[LiveArrival]]:
+    """Map each stop_id to its live arrivals, sorted by time."""
+
+    lines = resolve_lines(collect_stops_by_route(feed), lines_by_stop)
+    index: dict[str, list[LiveArrival]] = defaultdict(list)
+
+    for entity in feed.entity:
+        trip = entity.trip_update.trip
+        line = lines.get(trip.route_id)
+        if line is None:
+            continue
+
+        for update in entity.trip_update.stop_time_update:
+            if not update.HasField("arrival"):
+                continue
+            if abs(update.arrival.delay) > MAX_DELAY_SECONDS:
+                continue
+
+            arrival = LiveArrival(
+                line=line,
+                trip_id=trip.trip_id,
+                arrival_time=update.arrival.time,
+            )
+            index[update.stop_id].append(arrival)
+
+    for arrivals in index.values():
+        arrivals.sort(key=lambda a: a.arrival_time)
+    return dict(index)
 
 
 def collect_stops_by_route(
