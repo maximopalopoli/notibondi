@@ -1,13 +1,19 @@
+import asyncio
+import contextlib
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
+import httpx2
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from notibondi.db import Conn
+from notibondi.config import get_settings
+from notibondi.db import Conn, get_engine
+from notibondi.realtime import load_lines_by_stop
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
@@ -18,8 +24,29 @@ from notibondi.stops import (
     search_stops,
     stop_exists,
 )
+from notibondi.worker import LiveFeed, refresh_forever
 
-app = FastAPI()
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    with get_engine().connect() as conn:
+        lines_by_stop = load_lines_by_stop(conn)
+    app.state.live = LiveFeed()
+    async with httpx2.AsyncClient(timeout=30) as client:
+        task = asyncio.create_task(
+            refresh_forever(app.state.live, client, get_settings(), lines_by_stop)
+        )
+        yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(lifespan=lifespan)
 
 BASE_DIR = Path(__file__).parent
 
