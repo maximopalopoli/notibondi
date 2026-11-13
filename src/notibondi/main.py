@@ -24,7 +24,7 @@ from notibondi.stops import (
     search_stops,
     stop_exists,
 )
-from notibondi.worker import LiveFeed, refresh_forever
+from notibondi.worker import Health, LiveFeed, feed_health, refresh_forever
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -58,9 +58,16 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+def get_live(request: Request) -> LiveFeed:
+    return request.app.state.live
+
+
+Live = Annotated[LiveFeed, Depends(get_live)]
+
+
+@app.get("/health", response_model=Health)
+def health(live: Live) -> Health:
+    return feed_health(live)
 
 
 @app.get("/api/v1/stops/nearby", response_model=list[NearbyStop])

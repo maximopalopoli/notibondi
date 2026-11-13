@@ -3,8 +3,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
 from httpx2 import AsyncClient
+from pydantic import BaseModel
 
 from notibondi.config import Settings
 from notibondi.gcba import fetch_trip_updates
@@ -15,6 +17,8 @@ PEAK_SECONDS = 30
 OFF_PEAK_SECONDS = 60
 # Weekday rush hours in Buenos Aires: [start, end) in local hours.
 PEAK_HOURS = [(7, 10), (17, 20)]
+
+MAX_FEED_AGE_SECONDS = 5 * 60
 
 
 def refresh_seconds(at: datetime) -> int:
@@ -51,3 +55,16 @@ async def refresh_forever(
             live.fetched_at = time.monotonic()
             log.info("feed refreshed: %d stops", len(index))
         await asyncio.sleep(refresh_seconds(now()))
+
+
+class Health(BaseModel):
+    status: Literal["ok", "degraded"]
+    feed_age_seconds: int | None
+
+
+def feed_health(live: LiveFeed) -> Health:
+    if live.fetched_at is None:
+        return Health(status="degraded", feed_age_seconds=None)
+    age = time.monotonic() - live.fetched_at
+    status = "ok" if age <= MAX_FEED_AGE_SECONDS else "degraded"
+    return Health(status=status, feed_age_seconds=int(age))
