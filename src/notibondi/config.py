@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
+    gcba_client_id: str
+    gcba_client_secret: SecretStr
+    gcba_base_url: str = "https://apitransporte.buenosaires.gob.ar"
 
 
 # Settings are built on first call, not at import time, so importing this

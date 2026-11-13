@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.20.1",
     "fastapi>=0.162.0",
     "gtfs-realtime-bindings>=3.0.0",
+    "httpx2>=2.16.0",
     "jinja2>=3.1.6",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.1",
@@ -25,7 +26,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.16.0",
     "pytest>=9.1.1",
     "ruff>=0.17.3",
 ]

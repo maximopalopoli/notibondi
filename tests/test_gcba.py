@@ -1,0 +1,91 @@
+from pathlib import Path
+
+import httpx2
+import pytest
+
+from notibondi.config import Settings
+from notibondi.gcba import GcbaError, fetch_trip_updates
+
+FEED = Path(__file__).parent / "fixtures" / "trip_updates_205.pb"
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+def settings():
+    return Settings(
+        database_url="postgresql+psycopg://unused",
+        gcba_client_id="the-id",
+        gcba_client_secret="the-secret",
+        gcba_base_url="https://gcba.test",
+    )
+
+
+def client_with(handler) -> httpx2.AsyncClient:
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+
+
+@pytest.mark.anyio
+async def test_returns_the_parsed_feed_on_200(settings):
+    async with client_with(
+        lambda req: httpx2.Response(200, content=FEED.read_bytes())
+    ) as c:
+        feed = await fetch_trip_updates(c, settings)
+
+    assert len(feed.entity) > 0
+    assert feed.entity[0].HasField("trip_update")
+
+
+@pytest.mark.anyio
+async def test_sends_the_credentials_to_the_trip_updates_url(settings):
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        return httpx2.Response(200, content=FEED.read_bytes())
+
+    async with client_with(handler) as c:
+        await fetch_trip_updates(c, settings)
+
+    url = seen[0].url
+    assert url.host == "gcba.test"
+    assert url.path == "/colectivos/tripUpdates"
+    assert url.params["client_id"] == "the-id"
+    assert url.params["client_secret"] == "the-secret"
+
+
+@pytest.mark.anyio
+async def test_raises_gcba_error_on_500(settings):
+    async with client_with(lambda req: httpx2.Response(500)) as c:
+        with pytest.raises(GcbaError, match="500"):
+            await fetch_trip_updates(c, settings)
+
+
+@pytest.mark.anyio
+async def test_raises_gcba_error_when_the_request_fails(settings):
+    def handler(req):
+        raise httpx2.ConnectTimeout("timed out", request=req)
+
+    async with client_with(handler) as c:
+        with pytest.raises(GcbaError, match="ConnectTimeout"):
+            await fetch_trip_updates(c, settings)
+
+
+@pytest.mark.anyio
+async def test_raises_gcba_error_when_the_body_is_not_protobuf(settings):
+    html = b"<html><body>Service Unavailable</body></html>"
+    async with client_with(lambda req: httpx2.Response(200, content=html)) as c:
+        with pytest.raises(GcbaError, match="protobuf"):
+            await fetch_trip_updates(c, settings)
+
+
+@pytest.mark.anyio
+async def test_error_messages_never_include_the_secret(settings):
+    async with client_with(lambda req: httpx2.Response(500)) as c:
+        with pytest.raises(GcbaError) as exc:
+            await fetch_trip_updates(c, settings)
+
+    assert "the-secret" not in str(exc.value)
