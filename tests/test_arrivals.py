@@ -1,8 +1,10 @@
+import time
 from datetime import UTC, datetime
 
 import pytest
 
-from notibondi.main import app, current_time
+from notibondi.main import app, current_time, get_live
+from notibondi.realtime import LiveArrival
 from notibondi.schedules import (
     BUENOS_AIRES,
     Arrival,
@@ -10,6 +12,7 @@ from notibondi.schedules import (
     next_arrivals,
     to_gtfs_time,
 )
+from notibondi.worker import MAX_FEED_AGE_SECONDS, LiveFeed
 
 PLAZA_ITALIA = "6490106165"
 NO_LINES_STOP = "999001"
@@ -301,3 +304,94 @@ def test_stop_lists_load_the_arrivals_of_each_stop(client, url, params):
     # Not an id: the same stop can be both in the search and nearby lists
     assert 'hx-target="next .arrivals-slot"' in html
     assert html.count('class="stop"') == html.count('class="arrivals-slot"')
+
+
+# Live and scheduled together
+
+
+def live_feed(*arrivals: tuple[str, datetime], fetched_ago: float = 10) -> LiveFeed:
+    """A LiveFeed for PLAZA_ITALIA with (line, arrival time) pairs."""
+    return LiveFeed(
+        index={
+            PLAZA_ITALIA: [
+                LiveArrival(
+                    line=line, trip_id=f"t{i}", arrival_time=int(when.timestamp())
+                )
+                for i, (line, when) in enumerate(arrivals)
+            ]
+        },
+        fetched_at=time.monotonic() - fetched_ago,
+    )
+
+
+@pytest.fixture
+def client_live(client_at):
+    """The test client with the clock and the live feed fixed by the test."""
+
+    def fix(when: datetime, live: LiveFeed):
+        app.dependency_overrides[get_live] = lambda: live
+        return client_at(when)
+
+    return fix
+
+
+def test_arrivals_endpoint_with_feed_shows_live_arrivals(client_live):
+    # The schedule says 152A in 5 min; the live feed says 3.
+    live = live_feed(("152A", at(TUESDAY, 8, 3)))
+
+    response = client_live(at(TUESDAY, 8), live).get(
+        f"/api/v1/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert response.json() == [
+        {"line": "152A", "headsign": "a Olivos", "minutes": 3, "source": "realtime"}
+    ]
+
+
+def test_arrivals_endpoint_without_feed_shows_the_schedule(client_live):
+    # Index has data, but no good download yet: it must not be trusted.
+    live = live_feed(("152A", at(TUESDAY, 8, 3)))
+    live.fetched_at = None
+
+    response = client_live(at(TUESDAY, 8), live).get(
+        f"/api/v1/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert response.status_code == 200
+    assert [(a["minutes"], a["source"]) for a in response.json()] == [(5, "scheduled")]
+
+
+def test_arrivals_endpoint_ignores_a_stale_feed(client_live):
+    live = live_feed(("152A", at(TUESDAY, 8, 3)), fetched_ago=MAX_FEED_AGE_SECONDS + 60)
+
+    response = client_live(at(TUESDAY, 8), live).get(
+        f"/api/v1/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert [a["source"] for a in response.json()] == ["scheduled"]
+
+
+def test_arrivals_endpoint_mixes_a_live_line_with_a_scheduled_one(client_live):
+    # 60 only has live data here; 152A only has its schedule (5 min).
+    live = live_feed(("60", at(TUESDAY, 8, 2)), ("60", at(TUESDAY, 8, 9)))
+
+    response = client_live(at(TUESDAY, 8), live).get(
+        f"/api/v1/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert [(a["line"], a["minutes"], a["source"]) for a in response.json()] == [
+        ("60", 2, "realtime"),
+        ("152A", 5, "scheduled"),
+        ("60", 9, "realtime"),
+    ]
+
+
+def test_arrivals_partial_shows_live_arrivals(client_live):
+    live = live_feed(("60", at(TUESDAY, 8, 2)))
+
+    response = client_live(at(TUESDAY, 8), live).get(
+        f"/partials/stops/{PLAZA_ITALIA}/arrivals"
+    )
+
+    assert response.status_code == 200
+    assert "<strong>60</strong>" in response.text

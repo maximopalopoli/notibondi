@@ -27,7 +27,7 @@ class Arrival(BaseModel):
     line: str
     headsign: str
     minutes: int
-    source: Literal["scheduled"] = "scheduled"
+    source: Literal["scheduled", "realtime"] = "scheduled"
 
 
 def to_gtfs_time(seconds: int) -> str:

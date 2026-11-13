@@ -1,8 +1,11 @@
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 
 from google.transit import gtfs_realtime_pb2
 from sqlalchemy import Connection, text
+
+from notibondi.schedules import MAX_ARRIVALS, WINDOW_SECONDS, Arrival
 
 # A live route_id is a static line only if that line goes through at least
 # this share of the route's stops in the feed, and no other line ties with it.
@@ -107,3 +110,39 @@ def load_lines_by_stop(conn: Connection) -> dict[str, set[str]]:
     for stop_id, line in rows:
         lines_by_stop[stop_id].add(line)
     return dict(lines_by_stop)
+
+
+def merge_arrivals(
+    live: list[LiveArrival],
+    scheduled: list[Arrival],
+    at: datetime,
+) -> list[Arrival]:
+    """Live arrivals first-class; scheduled ones only for lines with no live data.
+
+    Lines are matched by name, never by route_id or trip_id. Live arrivals
+    already passed or beyond the schedule window are dropped.
+    """
+    # The feed has no usable headsign, so borrow the schedule's for that line.
+    headsign_by_line = {a.line: a.headsign for a in scheduled}
+    now_ts = at.timestamp()
+
+    realtime = []
+    for a in live:
+        seconds_left = a.arrival_time - now_ts
+        if seconds_left < 0 or seconds_left >= WINDOW_SECONDS:
+            continue
+        realtime.append(
+            Arrival(
+                line=a.line,
+                headsign=headsign_by_line.get(a.line, ""),
+                minutes=int(seconds_left // 60),
+                source="realtime",
+            )
+        )
+
+    live_lines = {a.line for a in realtime}
+    kept_scheduled = [a for a in scheduled if a.line not in live_lines]
+
+    merged = realtime + kept_scheduled
+    merged.sort(key=lambda a: a.minutes)
+    return merged[:MAX_ARRIVALS]

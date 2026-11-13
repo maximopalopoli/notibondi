@@ -10,7 +10,8 @@ from sqlalchemy import create_engine, make_url
 from notibondi.config import get_settings
 from notibondi.db import get_conn
 from notibondi.importer import import_gtfs
-from notibondi.main import app
+from notibondi.main import app, get_live
+from notibondi.worker import LiveFeed
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "gtfs-mini"
 
@@ -57,5 +58,8 @@ def client(db_engine, gtfs_loaded):
             yield conn
 
     app.dependency_overrides[get_conn] = override
+    # The lifespan (and so the worker) doesn't run in tests. An empty LiveFeed
+    # is degraded, so routes fall back to the schedule unless a test says so.
+    app.dependency_overrides[get_live] = LiveFeed
     yield TestClient(app)
     app.dependency_overrides.clear()

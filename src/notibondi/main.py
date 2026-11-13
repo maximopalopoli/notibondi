@@ -10,10 +10,11 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import Connection
 
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
-from notibondi.realtime import load_lines_by_stop
+from notibondi.realtime import load_lines_by_stop, merge_arrivals
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
@@ -63,6 +64,17 @@ def get_live(request: Request) -> LiveFeed:
 
 
 Live = Annotated[LiveFeed, Depends(get_live)]
+
+
+def arrivals_for(
+    conn: Connection, live: LiveFeed, stop_id: str, at: datetime
+) -> list[Arrival]:
+    """Live arrivals mixed with the schedule, or only the schedule if the
+    feed is degraded (no good download yet, or older than 5 minutes)."""
+    scheduled = next_arrivals(conn, stop_id, at)
+    if feed_health(live).status == "degraded":
+        return scheduled
+    return merge_arrivals(live.index.get(stop_id, []), scheduled, at)
 
 
 @app.get("/health", response_model=Health)
@@ -129,10 +141,10 @@ Now = Annotated[datetime, Depends(current_time)]
 
 
 @app.get("/api/v1/stops/{stop_id}/arrivals", response_model=list[Arrival])
-def stop_arrivals(stop_id: str, conn: Conn, at: Now):
+def stop_arrivals(stop_id: str, conn: Conn, live: Live, at: Now):
     if not stop_exists(conn, stop_id):
         raise HTTPException(status_code=404, detail="Stop not found")
-    return next_arrivals(conn, stop_id, at)
+    return arrivals_for(conn, live, stop_id, at)
 
 
 @app.get(
@@ -140,11 +152,13 @@ def stop_arrivals(stop_id: str, conn: Conn, at: Now):
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-def stop_arrivals_partial(request: Request, stop_id: str, conn: Conn, at: Now):
+def stop_arrivals_partial(
+    request: Request, stop_id: str, conn: Conn, live: Live, at: Now
+):
     if not stop_exists(conn, stop_id):
         raise HTTPException(status_code=404, detail="Stop not found")
     return templates.TemplateResponse(
         request,
         "partials/arrivals.html",
-        {"stop_id": stop_id, "arrivals": next_arrivals(conn, stop_id, at)},
+        {"stop_id": stop_id, "arrivals": arrivals_for(conn, live, stop_id, at)},
     )

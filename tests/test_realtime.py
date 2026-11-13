@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,14 @@ from notibondi.realtime import (
     build_index,
     collect_stops_by_route,
     load_lines_by_stop,
+    merge_arrivals,
     resolve_lines,
+)
+from notibondi.schedules import (
+    BUENOS_AIRES,
+    MAX_ARRIVALS,
+    WINDOW_SECONDS,
+    Arrival,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -225,3 +233,115 @@ def test_build_index_skips_routes_without_a_resolved_line():
 
 def test_build_index_of_an_empty_feed_is_empty():
     assert build_index(make_feed(), {"A": {"60"}}) == {}
+
+
+# merge_arrivals
+
+AT = datetime(2026, 11, 10, 8, 0, tzinfo=BUENOS_AIRES)
+
+
+def live_in(seconds: float, line: str = "108A", trip_id: str = "t") -> LiveArrival:
+    """A live arrival `seconds` after AT."""
+    return LiveArrival(
+        line=line, trip_id=trip_id, arrival_time=int(AT.timestamp() + seconds)
+    )
+
+
+def sched(line: str, minutes: int, headsign: str = "a Liniers") -> Arrival:
+    return Arrival(line=line, headsign=headsign, minutes=minutes)
+
+
+def test_merge_turns_live_arrivals_into_realtime_ones():
+    merged = merge_arrivals([live_in(5 * 60 + 30)], [sched("108A", 9)], AT)
+
+    assert merged == [
+        Arrival(line="108A", headsign="a Liniers", minutes=5, source="realtime")
+    ]
+
+
+def test_merge_live_minutes_are_whole_numbers():
+    [arrival] = merge_arrivals([live_in(59.9)], [], AT)
+
+    assert arrival.minutes == 0
+    assert isinstance(arrival.minutes, int)
+
+
+def test_merge_a_live_line_hides_its_scheduled_arrivals():
+    merged = merge_arrivals(
+        [live_in(4 * 60)], [sched("108A", 2), sched("108A", 20)], AT
+    )
+
+    assert [(a.minutes, a.source) for a in merged] == [(4, "realtime")]
+
+
+def test_merge_keeps_scheduled_lines_without_live_data_and_sorts_all():
+    merged = merge_arrivals(
+        [live_in(7 * 60, line="108A"), live_in(15 * 60, line="108A")],
+        [sched("152A", 3, "a Olivos"), sched("108A", 5), sched("152A", 12, "a Olivos")],
+        AT,
+    )
+
+    assert [(a.line, a.minutes, a.source) for a in merged] == [
+        ("152A", 3, "scheduled"),
+        ("108A", 7, "realtime"),
+        ("152A", 12, "scheduled"),
+        ("108A", 15, "realtime"),
+    ]
+
+
+def test_merge_without_live_data_returns_the_schedule():
+    scheduled = [sched("152A", 3), sched("108A", 5)]
+
+    assert merge_arrivals([], scheduled, AT) == scheduled
+
+
+def test_merge_drops_live_arrivals_already_passed():
+    merged = merge_arrivals([live_in(-1), live_in(60)], [], AT)
+
+    assert [a.minutes for a in merged] == [1]
+
+
+def test_merge_a_line_with_only_past_live_arrivals_falls_back_to_the_schedule():
+    merged = merge_arrivals([live_in(-30)], [sched("108A", 6)], AT)
+
+    assert [(a.minutes, a.source) for a in merged] == [(6, "scheduled")]
+
+
+def test_merge_uses_the_same_window_as_the_schedule():
+    merged = merge_arrivals(
+        [
+            live_in(WINDOW_SECONDS - 1, trip_id="inside"),
+            live_in(WINDOW_SECONDS, trip_id="at the limit"),
+            live_in(3 * 3600, trip_id="far"),
+        ],
+        [],
+        AT,
+    )
+
+    # 90 min is out, like in next_arrivals.
+    assert [a.minutes for a in merged] == [WINDOW_SECONDS // 60 - 1]
+
+
+def test_merge_takes_the_headsign_from_the_schedule_of_that_line():
+    merged = merge_arrivals(
+        [live_in(60, line="108A"), live_in(120, line="60")],
+        [sched("108A", 30, "a Liniers")],
+        AT,
+    )
+
+    assert [(a.line, a.headsign) for a in merged] == [("108A", "a Liniers"), ("60", "")]
+
+
+def test_merge_puts_live_first_when_the_minutes_tie():
+    merged = merge_arrivals([live_in(5 * 60, line="108A")], [sched("152A", 5)], AT)
+
+    assert [a.source for a in merged] == ["realtime", "scheduled"]
+
+
+def test_merge_keeps_only_the_earliest_max_arrivals():
+    live = [live_in(m * 60, trip_id=str(m)) for m in range(MAX_ARRIVALS + 5, 0, -1)]
+
+    merged = merge_arrivals(live, [], AT)
+
+    assert len(merged) == MAX_ARRIVALS
+    assert [a.minutes for a in merged] == list(range(1, MAX_ARRIVALS + 1))
