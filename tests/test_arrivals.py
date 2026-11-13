@@ -233,7 +233,8 @@ def test_arrivals_partial_shows_line_headsign_and_minutes(client_at):
 
     assert "<strong>152A</strong> a Olivos" in html
     assert "5 min" in html
-    assert "Según el horario programado" in html
+    assert "programado" in html
+    assert "en vivo" not in html
 
 
 def test_arrivals_partial_uses_the_injected_time(client_at):
@@ -255,7 +256,7 @@ def test_arrivals_partial_without_arrivals_shows_a_message(client_at):
     response = client_at(at(WEDNESDAY, 8)).get(ARRIVALS_PARTIAL)
 
     assert response.status_code == 200
-    assert "No hay colectivos programados en los próximos 90 minutos." in response.text
+    assert "No hay colectivos en los próximos 90 minutos." in response.text
 
 
 def test_arrivals_partial_returns_404_for_an_unknown_stop(client_at):
@@ -395,3 +396,46 @@ def test_arrivals_partial_shows_live_arrivals(client_live):
 
     assert response.status_code == 200
     assert "<strong>60</strong>" in response.text
+
+
+def tags(html: str) -> list[str]:
+    """The source tag of each row, in order."""
+    return [part.split('">', 1)[0] for part in html.split('class="tag tag-')[1:]]
+
+
+def test_arrivals_partial_tags_a_live_row_as_live(client_live):
+    live = live_feed(("152A", at(TUESDAY, 8, 3)))
+
+    html = client_live(at(TUESDAY, 8), live).get(ARRIVALS_PARTIAL).text
+
+    assert tags(html) == ["realtime"]
+    assert "en vivo" in html
+    assert "programado" not in html
+
+
+def test_arrivals_partial_tags_each_row_of_a_mixed_list(client_live):
+    live = live_feed(("60", at(TUESDAY, 8, 2)), ("60", at(TUESDAY, 8, 9)))
+
+    html = client_live(at(TUESDAY, 8), live).get(ARRIVALS_PARTIAL).text
+
+    assert tags(html) == ["realtime", "scheduled", "realtime"]
+    assert html.count("en vivo") == 2
+    assert html.count("programado") == 1
+
+
+def test_arrivals_partial_falls_back_to_scheduled_tags_with_a_stale_feed(
+    client_live,
+):
+    live = live_feed(("152A", at(TUESDAY, 8, 3)), fetched_ago=MAX_FEED_AGE_SECONDS + 60)
+
+    html = client_live(at(TUESDAY, 8), live).get(ARRIVALS_PARTIAL).text
+
+    assert tags(html) == ["scheduled"]
+    assert "en vivo" not in html
+
+
+def test_arrivals_partial_no_longer_has_a_global_source_line(client_at):
+    # The list can mix both kinds, so the mark lives on each row.
+    html = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
+
+    assert "Según el horario programado" not in html

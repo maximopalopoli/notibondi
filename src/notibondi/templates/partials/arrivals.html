@@ -6,11 +6,11 @@
     {% for a in arrivals %}
     <li>
       <strong>{{ a.line }}</strong> {{ a.headsign }}
+      <span class="tag tag-{{ a.source }}">{% if a.source == "realtime" %}en vivo{% else %}programado{% endif %}</span>
       <span class="minutes">{% if a.minutes == 0 %}llegando{% else %}{{ a.minutes }} min{% endif %}</span>
     </li>
     {% else %}
-    <li>No hay colectivos programados en los próximos 90 minutos.</li>
+    <li>No hay colectivos en los próximos 90 minutos.</li>
     {% endfor %}
   </ul>
-  <p class="source">Según el horario programado</p>
 </div>
