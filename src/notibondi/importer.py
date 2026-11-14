@@ -47,16 +47,18 @@ def load_routes(conn: Connection, zf: zipfile.ZipFile) -> None:
         {
             "route_id": row["route_id"],
             "route_short_name": row["route_short_name"],
+            "route_desc": row["route_desc"],
         }
         for row in read_csv(zf, "routes.txt")
     ]
 
     conn.execute(
         text("""
-            INSERT INTO routes (route_id, route_short_name)
+            INSERT INTO routes (route_id, route_short_name, route_desc)
             VALUES (
                 :route_id,
-                :route_short_name
+                :route_short_name,
+                :route_desc
             )
         """),
         rows,

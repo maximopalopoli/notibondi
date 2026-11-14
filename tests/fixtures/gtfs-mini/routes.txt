@@ -1,3 +1,5 @@
-route_id,route_short_name
-"1001","152A"
-"4167","505R3"
+route_id,route_short_name,route_desc
+"1001","152A","La Boca - Olivos"
+"4167","505R3","Ramal 3 - San Francisco Solano - Est. Burzaco x Vasco Nuñez de Balboa"
+"1002","152B","La Boca - Est. Bartolome Mitre"
+"1003","15A","Valentín Alsina - Est. Benavídez"

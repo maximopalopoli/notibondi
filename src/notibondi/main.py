@@ -15,6 +15,7 @@ from sqlalchemy import Connection
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
 from notibondi.realtime import load_lines_by_stop, merge_arrivals
+from notibondi.routes import Route, search_routes
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
@@ -162,3 +163,11 @@ def stop_arrivals_partial(
         "partials/arrivals.html",
         {"stop_id": stop_id, "arrivals": arrivals_for(conn, live, stop_id, at)},
     )
+
+
+LineQ = Annotated[str, Query(min_length=1, max_length=10, pattern="^[0-9A-Za-z]+$")]
+
+
+@app.get("/api/v1/routes/search", response_model=list[Route])
+def routes_by_query(q: LineQ, conn: Conn):
+    return search_routes(conn, q)

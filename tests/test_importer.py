@@ -51,7 +51,7 @@ def test_import_loads_routes_and_trips(db_engine, gtfs_zip):
         routes = conn.execute(text("SELECT count(*) FROM routes")).scalar()
         trips = conn.execute(text("SELECT count(*) FROM trips")).scalar()
 
-        assert routes == 2
+        assert routes == 4
         assert trips == 7
         conn.rollback()
 
