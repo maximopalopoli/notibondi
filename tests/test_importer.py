@@ -359,3 +359,69 @@ def test_import_stores_shape_sequence_as_a_number(db_engine, gtfs_zip):
 
         assert sequences == [1, 2, 3, 4]
         conn.rollback()
+
+
+def test_import_builds_route_stops_for_each_direction(db_engine, gtfs_zip):
+    # 152A has 2 directions with 3 stops each, 505R3 one with 2 stops
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM route_stops")).scalar()
+
+        assert count == 8
+        conn.rollback()
+
+
+def test_import_picks_the_trip_with_most_stops(db_engine, gtfs_zip):
+    # 152A direction 0: 1-1 and 2-1 have 3 stops and tie, 7-1 has 2; the
+    # lowest trip_id wins the tie. 505R3: 3-1 and 4-1 tie at 2, 5-1 has 1.
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        picked = conn.execute(
+            text("""
+                SELECT DISTINCT route_id, direction_id, trip_id
+                FROM route_stops
+                ORDER BY route_id, direction_id
+            """)
+        ).all()
+
+        assert [tuple(p) for p in picked] == [
+            ("1001", 0, "1-1"),
+            ("1001", 1, "6-1"),
+            ("4167", 0, "3-1"),
+        ]
+        conn.rollback()
+
+
+def test_import_copies_the_stops_of_the_picked_trip(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        stops = conn.execute(
+            text("""
+                SELECT stop_sequence, stop_id
+                FROM route_stops
+                WHERE route_id = '1001' AND direction_id = 1
+                ORDER BY stop_sequence
+            """)
+        ).all()
+
+        assert [tuple(s) for s in stops] == [
+            (1, "204229"),
+            (2, "6490106165"),
+            (3, "205696"),
+        ]
+        conn.rollback()
+
+
+def test_import_twice_does_not_duplicate_route_stops(db_engine, gtfs_zip):
+    # Without the TRUNCATE the second import would hit the primary key
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM route_stops")).scalar()
+
+        assert count == 8
+        conn.rollback()

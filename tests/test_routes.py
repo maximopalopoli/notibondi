@@ -1,6 +1,6 @@
 import pytest
 
-from notibondi.routes import search_routes
+from notibondi.routes import route_directions, search_routes
 
 # search_routes
 
@@ -39,6 +39,53 @@ def test_search_routes_returns_id_and_description(conn):
 
 def test_search_routes_returns_empty_list_when_nothing_matches(conn):
     assert search_routes(conn, "999") == []
+
+
+# route_directions
+
+
+def test_route_directions_returns_both_directions_in_order(conn):
+    directions = route_directions(conn, "1001")
+
+    assert [d.direction_id for d in directions] == [0, 1]
+
+
+def test_route_directions_lists_the_stops_in_order(conn):
+    outbound, inbound = route_directions(conn, "1001")
+
+    assert [s.stop_id for s in outbound.stops] == ["205696", "6490106165", "204229"]
+    assert [s.stop_id for s in inbound.stops] == ["204229", "6490106165", "205696"]
+
+
+def test_route_directions_uses_headsign_and_shape_of_the_picked_trip(conn):
+    outbound, inbound = route_directions(conn, "1001")
+
+    assert (outbound.trip_headsign, outbound.shape_id) == ("a Olivos", "S1")
+    assert (inbound.trip_headsign, inbound.shape_id) == ("a La Boca", "S2")
+
+
+def test_route_directions_returns_stop_name_and_position(conn):
+    stop = route_directions(conn, "1001")[0].stops[1]
+
+    assert stop.stop_name == "PLAZA ITALIA"
+    assert stop.lat == pytest.approx(-34.581)
+    assert stop.lon == pytest.approx(-58.421)
+
+
+def test_route_directions_returns_one_direction_when_there_is_only_one(conn):
+    directions = route_directions(conn, "4167")
+
+    assert [d.direction_id for d in directions] == [0]
+    assert [s.stop_id for s in directions[0].stops] == ["6490106165", "691100952"]
+
+
+def test_route_directions_is_empty_for_a_route_without_trips(conn):
+    # 152B is in routes.txt but has no trips
+    assert route_directions(conn, "1002") == []
+
+
+def test_route_directions_is_empty_for_an_unknown_route(conn):
+    assert route_directions(conn, "no-existe") == []
 
 
 # GET /api/v1/routes/search

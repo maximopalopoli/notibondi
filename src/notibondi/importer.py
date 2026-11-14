@@ -173,6 +173,32 @@ def load_shapes(conn: Connection, zf: zipfile.ZipFile) -> None:
             )
 
 
+def build_route_stops(conn: Connection) -> None:
+    conn.execute(
+        text("""
+            INSERT INTO route_stops (route_id, direction_id, stop_sequence, stop_id, trip_id)
+            WITH counts AS (
+                -- step 1: how many stops each trip has
+                SELECT trip_id, count(*) AS n
+                FROM stop_times
+                GROUP BY trip_id
+            ),
+            representatives AS (
+                -- step 2: one trip per (route, direction)
+                SELECT DISTINCT ON (t.route_id, t.direction_id)
+                    t.route_id, t.direction_id, t.trip_id
+                FROM trips t
+                JOIN counts c ON c.trip_id = t.trip_id
+                ORDER BY t.route_id, t.direction_id, c.n DESC, t.trip_id
+            )
+            -- step 3: the stops of those trips
+            SELECT r.route_id, r.direction_id, st.stop_sequence, st.stop_id, r.trip_id
+            FROM representatives r
+            JOIN stop_times st ON st.trip_id = r.trip_id
+        """)
+    )
+
+
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
@@ -180,7 +206,7 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
 
     conn.execute(
         text(
-            "TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes"
+            "TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes, route_stops"
         )
     )
 
@@ -190,6 +216,7 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
         load_trips(conn, zf)
         load_stop_times(conn, zf)
         build_stop_routes(conn)
+        build_route_stops(conn)
         load_calendar_dates(conn, zf)
         load_shapes(conn, zf)
 
@@ -206,7 +233,7 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
 
     conn.execute(
         text(
-            "ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes"
+            "ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes, route_stops"
         )
     )
 
