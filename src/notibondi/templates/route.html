@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', path='maplibre-gl.css') }}">
+<script src="{{ url_for('static', path='maplibre-gl.js') }}" defer></script>
+<script src="{{ url_for('static', path='route.js') }}" defer></script>
+{% endblock %}
+
 {% block content %}
 <p><a href="/routes">← Buscar otra línea</a></p>
 <h1>{{ route.route_short_name }}</h1>
 <p>{{ route.route_desc }}</p>
+<div id="map" data-geojson-url="/api/v1/routes/{{ route.route_id }}/geojson"></div>
 {% endblock %}

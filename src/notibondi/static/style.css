@@ -86,3 +86,7 @@ body {
   color: #fff;
   background: #1e8e3e;
 }
+
+#map {
+  height: 70vh;
+}
