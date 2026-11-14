@@ -1,6 +1,12 @@
 import pytest
 
-from notibondi.routes import route_directions, route_geojson, search_routes
+from notibondi.routes import (
+    Route,
+    get_route,
+    route_directions,
+    route_geojson,
+    search_routes,
+)
 
 # search_routes
 
@@ -237,3 +243,127 @@ def test_routes_search_endpoint_requires_q(client):
     response = client.get("/api/v1/routes/search")
 
     assert response.status_code == 422
+
+
+# GET /routes and /partials/routes/search
+
+
+def test_routes_page_has_the_search_input(client):
+    response = client.get("/routes")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'hx-get="/partials/routes/search"' in response.text
+
+
+def test_index_links_to_routes_page(client):
+    assert 'href="/routes"' in client.get("/").text
+
+
+def test_routes_partial_links_each_branch_to_its_page(client):
+    response = client.get("/partials/routes/search", params={"q": "152"})
+
+    assert response.status_code == 200
+    assert 'href="/routes/1001">152A</a> · La Boca - Olivos' in response.text
+    assert 'href="/routes/1002">152B</a>' in response.text
+
+
+def test_routes_partial_ignores_spaces_around_q(client):
+    response = client.get("/partials/routes/search", params={"q": " 15 "})
+
+    assert 'href="/routes/1003">15A</a>' in response.text
+
+
+def test_routes_partial_says_when_nothing_matches(client):
+    response = client.get("/partials/routes/search", params={"q": "999"})
+
+    assert "No se encontraron líneas" in response.text
+
+
+@pytest.mark.parametrize("q", ["", "   ", ".*", "15|152", "1" * 11])
+def test_routes_partial_is_empty_for_bad_queries(client, q):
+    # The partial answers 200 with nothing, so htmx just clears the results
+    response = client.get("/partials/routes/search", params={"q": q})
+
+    assert response.status_code == 200
+    assert response.text == ""
+
+
+def test_routes_partial_without_q_is_empty(client):
+    response = client.get("/partials/routes/search")
+
+    assert response.status_code == 200
+    assert response.text == ""
+
+
+def test_route_pages_are_not_in_api_docs(client):
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/routes" not in paths
+    assert "/partials/routes/search" not in paths
+    assert "/routes/{route_id}" not in paths
+
+
+# GET /routes/{route_id}
+
+
+def test_route_page_shows_name_and_description(client):
+    response = client.get("/routes/1001")
+
+    assert response.status_code == 200
+    assert "<h1>152A</h1>" in response.text
+    assert "La Boca - Olivos" in response.text
+
+
+def test_route_page_points_the_map_to_the_geojson(client):
+    html = client.get("/routes/1001").text
+
+    assert 'data-geojson-url="/api/v1/routes/1001/geojson"' in html
+
+
+def test_route_page_loads_maplibre_before_route_js(client):
+    # Both are deferred, so they run in this order
+    html = client.get("/routes/1001").text
+
+    assert "/static/maplibre-gl.css" in html
+    assert html.index("/static/maplibre-gl.js") < html.index("/static/route.js")
+
+
+def test_route_page_works_for_a_route_without_trips(client):
+    # 152B has no trips: the page loads and the map just stays empty
+    response = client.get("/routes/1002")
+
+    assert response.status_code == 200
+    assert "<h1>152B</h1>" in response.text
+
+
+def test_route_page_returns_404_for_unknown_route(client):
+    assert client.get("/routes/no-existe").status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("path", "content_type"),
+    [
+        ("/static/maplibre-gl.js", "javascript"),
+        ("/static/maplibre-gl.css", "text/css"),
+        ("/static/route.js", "javascript"),
+    ],
+)
+def test_static_serves_map_files(client, path, content_type):
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert content_type in response.headers["content-type"]
+
+
+# get_route
+
+
+def test_get_route_returns_the_route(conn):
+    assert get_route(conn, "1001") == Route(
+        route_id="1001", route_short_name="152A", route_desc="La Boca - Olivos"
+    )
+
+
+def test_get_route_returns_none_for_unknown_route(conn):
+    assert get_route(conn, "no-existe") is None
