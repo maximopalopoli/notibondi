@@ -135,3 +135,15 @@ def route_exists(conn: Connection, route_id: str) -> bool:
         text("SELECT EXISTS (SELECT 1 FROM routes WHERE route_id = :route_id)"),
         {"route_id": route_id},
     ).scalar()
+
+
+def get_route(conn: Connection, route_id: str) -> Route | None:
+    row = conn.execute(
+        text("""
+            SELECT route_id, route_short_name, route_desc
+            FROM routes
+            WHERE route_id = :route_id
+        """),
+        {"route_id": route_id},
+    ).one_or_none()
+    return Route(**row._mapping) if row else None

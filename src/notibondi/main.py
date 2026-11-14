@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -15,7 +16,13 @@ from sqlalchemy import Connection
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
 from notibondi.realtime import load_lines_by_stop, merge_arrivals
-from notibondi.routes import Route, route_exists, route_geojson, search_routes
+from notibondi.routes import (
+    Route,
+    get_route,
+    route_exists,
+    route_geojson,
+    search_routes,
+)
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
@@ -31,6 +38,8 @@ from notibondi.worker import Health, LiveFeed, feed_health, refresh_forever
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
 )
+# httpx2 logs every request URL at INFO, and the GCBA URL carries the secret
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
 @contextlib.asynccontextmanager
@@ -180,3 +189,34 @@ def route_geojson_api(route_id: str, conn: Conn):
     return JSONResponse(
         content=route_geojson(conn, route_id), media_type="application/geo+json"
     )
+
+
+LINE_NAME = re.compile(r"[0-9A-Za-z]{1,10}")  # same rule as LineQ
+
+
+@app.get("/routes", response_class=HTMLResponse, include_in_schema=False)
+def routes_page(request: Request):
+    return templates.TemplateResponse(request, "routes.html")
+
+
+@app.get(
+    "/partials/routes/search", response_class=HTMLResponse, include_in_schema=False
+)
+def search_routes_partial(
+    request: Request, conn: Conn, q: Annotated[str, Query(max_length=100)] = ""
+):
+    q = q.strip()
+    # search_routes puts q inside a regex, so only letters and digits get in
+    if not LINE_NAME.fullmatch(q):
+        return HTMLResponse("")
+    return templates.TemplateResponse(
+        request, "partials/routes.html", {"routes": search_routes(conn, q)}
+    )
+
+
+@app.get("/routes/{route_id}", response_class=HTMLResponse, include_in_schema=False)
+def route_page(route_id: str, request: Request, conn: Conn):
+    route = get_route(conn, route_id)
+    if route is None:
+        raise HTTPException(status_code=404, detail="Route not found")
+    return templates.TemplateResponse(request, "route.html", {"route": route})

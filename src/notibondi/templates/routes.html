@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Buscar línea</h1>
+<p><a href="/">← Paradas</a></p>
+
+<label for="search">Número de línea</label>
+<input type="search" id="search" name="q" maxlength="10"
+       placeholder="Ej: 152" autocomplete="off"
+       hx-get="/partials/routes/search"
+       hx-trigger="input changed delay:300ms, search"
+       hx-target="#search-results"
+       hx-sync="this:replace">
+<div id="search-results"></div>
+{% endblock %}

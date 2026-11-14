@@ -1,0 +1,9 @@
+{% if routes %}
+<ul>
+  {% for route in routes %}
+  <li><a href="/routes/{{ route.route_id }}">{{ route.route_short_name }}</a> · {{ route.route_desc }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>No se encontraron líneas con ese número.</p>
+{% endif %}
