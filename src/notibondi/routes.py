@@ -1,3 +1,4 @@
+import json
 from itertools import groupby
 
 from pydantic import BaseModel
@@ -74,3 +75,63 @@ def route_directions(conn: Connection, route_id: str) -> list[Direction]:
             )
         )
     return directions
+
+
+def route_geojson(conn: Connection, route_id: str) -> dict:
+    directions = route_directions(conn, route_id)
+
+    shapes = []
+    for direction in directions:
+        shapes.append(direction.shape_id)
+
+    rows = conn.execute(
+        text("""
+        SELECT shape_id,
+            ST_AsGeoJSON(ST_MakeLine(geom ORDER BY shape_pt_sequence)) AS line
+        FROM shapes
+        WHERE shape_id = ANY(:shape_ids)
+        GROUP BY shape_id
+        """),
+        {"shape_ids": shapes},
+    )
+
+    lines = {row.shape_id: json.loads(row.line) for row in rows}
+
+    features = []
+
+    for d in directions:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": lines[d.shape_id],
+                "properties": {
+                    "direction_id": d.direction_id,
+                    "trip_headsign": d.trip_headsign,
+                },
+            }
+        )
+
+        for s in d.stops:
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [s.lon, s.lat],
+                    },
+                    "properties": {
+                        "stop_id": s.stop_id,
+                        "stop_name": s.stop_name,
+                        "direction_id": d.direction_id,
+                    },
+                }
+            )
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+def route_exists(conn: Connection, route_id: str) -> bool:
+    return conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM routes WHERE route_id = :route_id)"),
+        {"route_id": route_id},
+    ).scalar()

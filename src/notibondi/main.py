@@ -7,7 +7,7 @@ from typing import Annotated
 
 import httpx2
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Connection
@@ -15,7 +15,7 @@ from sqlalchemy import Connection
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
 from notibondi.realtime import load_lines_by_stop, merge_arrivals
-from notibondi.routes import Route, search_routes
+from notibondi.routes import Route, route_exists, route_geojson, search_routes
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
@@ -171,3 +171,12 @@ LineQ = Annotated[str, Query(min_length=1, max_length=10, pattern="^[0-9A-Za-z]+
 @app.get("/api/v1/routes/search", response_model=list[Route])
 def routes_by_query(q: LineQ, conn: Conn):
     return search_routes(conn, q)
+
+
+@app.get("/api/v1/routes/{route_id}/geojson")
+def route_geojson_api(route_id: str, conn: Conn):
+    if not route_exists(conn, route_id):
+        raise HTTPException(status_code=404, detail="Route not found")
+    return JSONResponse(
+        content=route_geojson(conn, route_id), media_type="application/geo+json"
+    )
