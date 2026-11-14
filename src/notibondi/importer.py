@@ -70,18 +70,22 @@ def load_trips(conn: Connection, zf: zipfile.ZipFile) -> None:
             "route_id": row["route_id"],
             "service_id": row["service_id"],
             "trip_headsign": row["trip_headsign"],
+            "direction_id": int(row["direction_id"]),
+            "shape_id": row["shape_id"],
         }
         for row in read_csv(zf, "trips.txt")
     ]
 
     conn.execute(
         text("""
-            INSERT INTO trips (trip_id, route_id, service_id, trip_headsign)
+            INSERT INTO trips (trip_id, route_id, service_id, trip_headsign, direction_id, shape_id)
             VALUES (
                 :trip_id,
                 :route_id,
                 :service_id,
-                :trip_headsign
+                :trip_headsign,
+                :direction_id,
+                :shape_id
             )
         """),
         rows,
@@ -98,10 +102,19 @@ def load_stop_times(conn: Connection, zf: zipfile.ZipFile) -> None:
     raw_conn = conn.connection.driver_connection
     with (
         raw_conn.cursor() as cur,
-        cur.copy("COPY stop_times (trip_id, stop_id, arrival_time) FROM STDIN") as copy,
+        cur.copy(
+            "COPY stop_times (trip_id, stop_id, arrival_time, stop_sequence) FROM STDIN"
+        ) as copy,
     ):
         for row in read_csv(zf, "stop_times.txt"):
-            copy.write_row((row["trip_id"], row["stop_id"], row["arrival_time"]))
+            copy.write_row(
+                (
+                    row["trip_id"],
+                    row["stop_id"],
+                    row["arrival_time"],
+                    row["stop_sequence"],
+                )
+            )
 
 
 def build_stop_routes(conn: Connection) -> None:
@@ -139,13 +152,34 @@ def load_calendar_dates(conn: Connection, zf: zipfile.ZipFile) -> None:
     )
 
 
+def load_shapes(conn: Connection, zf: zipfile.ZipFile) -> None:
+    # Same connection SQLAlchemy uses, so COPY runs in the caller's transaction
+    raw_conn = conn.connection.driver_connection
+    with (
+        raw_conn.cursor() as cur,
+        cur.copy("COPY shapes (shape_id, shape_pt_sequence, geom) FROM STDIN") as copy,
+    ):
+        for row in read_csv(zf, "shapes.txt"):
+            lat = row["shape_pt_lat"]
+            lon = row["shape_pt_lon"]
+            copy.write_row(
+                (
+                    row["shape_id"],
+                    row["shape_pt_sequence"],
+                    f"SRID=4326;POINT({lon} {lat})",
+                )
+            )
+
+
 def import_gtfs(conn: Connection, zip_path: Path) -> None:
     """Load the GTFS zip into the database. The caller owns the transaction."""
 
     conn.execute(text("DROP INDEX IF EXISTS stop_times_stop_arrival_idx"))
 
     conn.execute(
-        text("TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates")
+        text(
+            "TRUNCATE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes"
+        )
     )
 
     with zipfile.ZipFile(zip_path) as zf:
@@ -155,6 +189,7 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
         load_stop_times(conn, zf)
         build_stop_routes(conn)
         load_calendar_dates(conn, zf)
+        load_shapes(conn, zf)
 
     # The index is dropped before the COPY and built again here because
     # creating it once over the loaded rows is much faster than updating it
@@ -168,7 +203,9 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
     )
 
     conn.execute(
-        text("ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates")
+        text(
+            "ANALYZE stops, routes, trips, stop_times, stop_routes, calendar_dates, shapes"
+        )
     )
 
 

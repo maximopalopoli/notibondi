@@ -201,11 +201,14 @@ def test_import_fills_every_new_column(db_engine, gtfs_zip):
                 SELECT
                     (SELECT count(*) FROM stop_times WHERE arrival_time IS NULL),
                     (SELECT count(*) FROM trips WHERE service_id IS NULL),
-                    (SELECT count(*) FROM trips WHERE trip_headsign IS NULL)
+                    (SELECT count(*) FROM trips WHERE trip_headsign IS NULL),
+                    (SELECT count(*) FROM trips WHERE direction_id IS NULL),
+                    (SELECT count(*) FROM trips WHERE shape_id IS NULL),
+                    (SELECT count(*) FROM stop_times WHERE stop_sequence IS NULL)
             """)
         ).one()
 
-        assert tuple(nulls) == (0, 0, 0)
+        assert tuple(nulls) == (0, 0, 0, 0, 0, 0)
         conn.rollback()
 
 
@@ -247,4 +250,112 @@ def test_import_twice_does_not_duplicate_calendar_dates(db_engine, gtfs_zip):
         count = conn.execute(text("SELECT count(*) FROM calendar_dates")).scalar()
 
         assert count == 10
+        conn.rollback()
+
+
+def test_import_stores_direction_and_shape_of_trips(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        trips = conn.execute(
+            text("""
+                SELECT trip_id, direction_id, shape_id
+                FROM trips
+                WHERE route_id = '1001'
+                ORDER BY trip_id
+            """)
+        ).all()
+
+        assert [tuple(t) for t in trips] == [
+            ("1-1", 0, "S1"),
+            ("2-1", 0, "S1"),
+            ("6-1", 1, "S2"),
+            ("7-1", 0, "S1"),
+        ]
+        conn.rollback()
+
+
+def test_import_stores_stop_sequence(db_engine, gtfs_zip):
+    # 6-1 runs the other way, so its stops are in reverse order
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        stops = conn.execute(
+            text("""
+                SELECT stop_sequence, stop_id
+                FROM stop_times
+                WHERE trip_id = '6-1'
+                ORDER BY stop_sequence
+            """)
+        ).all()
+
+        assert [tuple(s) for s in stops] == [
+            (1, "204229"),
+            (2, "6490106165"),
+            (3, "205696"),
+        ]
+        conn.rollback()
+
+
+def test_import_loads_shapes(db_engine, gtfs_zip):
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM shapes")).scalar()
+
+        assert count == 10
+        conn.rollback()
+
+
+def test_import_twice_does_not_duplicate_shapes(db_engine, gtfs_zip):
+    # Without the TRUNCATE the second import would hit the primary key
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+        import_gtfs(conn, gtfs_zip)
+
+        count = conn.execute(text("SELECT count(*) FROM shapes")).scalar()
+
+        assert count == 10
+        conn.rollback()
+
+
+def test_import_stores_shape_points_as_lon_lat(db_engine, gtfs_zip):
+    # PostGIS points are (x, y) = (lon, lat); swapping them puts the
+    # point in Antarctica
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        lat, lon, srid = conn.execute(
+            text("""
+                SELECT ST_Y(geom), ST_X(geom), ST_SRID(geom)
+                FROM shapes
+                WHERE shape_id = 'S1' AND shape_pt_sequence = 1
+            """)
+        ).one()
+
+        assert lat == pytest.approx(-34.57965)
+        assert lon == pytest.approx(-58.421)
+        assert srid == 4326
+        conn.rollback()
+
+
+def test_import_stores_shape_sequence_as_a_number(db_engine, gtfs_zip):
+    # The file lists the points out of order; sorting must use the number
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        sequences = (
+            conn.execute(
+                text("""
+                SELECT shape_pt_sequence
+                FROM shapes
+                WHERE shape_id = 'S1'
+                ORDER BY shape_pt_sequence
+            """)
+            )
+            .scalars()
+            .all()
+        )
+
+        assert sequences == [1, 2, 3, 4]
         conn.rollback()
