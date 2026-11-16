@@ -10,7 +10,7 @@ from httpx2 import AsyncClient
 from pydantic import BaseModel
 
 from notibondi.config import Settings
-from notibondi.gcba import fetch_trip_updates, fetch_vehicle_positions
+from notibondi.gcba import GcbaError, fetch_trip_updates, fetch_vehicle_positions
 from notibondi.realtime import LiveArrival, Vehicle, build_index, group_vehicles
 from notibondi.schedules import now
 
@@ -102,7 +102,11 @@ async def poll_forever(
     while True:
         try:
             await refresh()
-        except Exception:  # the loop must never die
+        except GcbaError as e:
+            # Expected: the GCBA fails every day. One line, no traceback.
+            failures += 1
+            log.warning("%s refresh failed: %s", name, e)
+        except Exception:  # a bug: the traceback helps, but the loop must never die
             failures += 1
             log.exception("%s refresh failed", name)
         else:

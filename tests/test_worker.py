@@ -220,19 +220,39 @@ async def test_poll_forever_success_resets_the_backoff():
 
 
 @pytest.mark.anyio
-async def test_poll_forever_logs_the_feed_name(caplog):
+async def test_poll_forever_logs_a_gcba_failure_in_one_line(caplog):
     sleep, _ = fake_sleep(rounds=1)
     refresh, _ = refresh_that(False)
 
     with (
-        caplog.at_level(logging.ERROR, logger="notibondi.worker"),
+        caplog.at_level(logging.WARNING, logger="notibondi.worker"),
         pytest.raises(Stop),
     ):
         await poll_forever("vehicle positions", refresh, lambda: 60, sleep)
 
-    assert [r.getMessage() for r in caplog.records] == [
-        "vehicle positions refresh failed"
-    ]
+    [record] = caplog.records
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == "vehicle positions refresh failed: the GCBA is down"
+    assert record.exc_info is None  # no traceback
+
+
+@pytest.mark.anyio
+async def test_poll_forever_logs_an_unexpected_error_with_its_traceback(caplog):
+    sleep, _ = fake_sleep(rounds=1)
+
+    async def buggy_refresh():
+        raise KeyError("boom")
+
+    with (
+        caplog.at_level(logging.WARNING, logger="notibondi.worker"),
+        pytest.raises(Stop),
+    ):
+        await poll_forever("trip updates", buggy_refresh, lambda: 60, sleep)
+
+    [record] = caplog.records
+    assert record.levelno == logging.ERROR
+    assert record.getMessage() == "trip updates refresh failed"
+    assert record.exc_info is not None
 
 
 # refresh_forever
@@ -321,7 +341,7 @@ async def test_the_loop_logs_failures_and_keeps_going(settings, lines_by_stop, c
             )
 
     messages = [r.getMessage() for r in caplog.records]
-    assert "trip updates refresh failed" in messages
+    assert any(m.startswith("trip updates refresh failed: ") for m in messages)
     assert any(m.startswith("feed refreshed:") for m in messages)
 
 
