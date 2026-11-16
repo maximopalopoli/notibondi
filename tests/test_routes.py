@@ -234,8 +234,22 @@ def live_152a(client):
         lines={"311": "152A"},
         vehicles={
             "311": [
-                Vehicle("a", lat=-34.58, lon=-58.42, timestamp=now, label="1"),
-                Vehicle("b", lat=-34.59, lon=-58.42, timestamp=now - 10, label="2"),
+                Vehicle(
+                    "a",
+                    lat=-34.58,
+                    lon=-58.42,
+                    timestamp=now,
+                    label="1",
+                    direction_id=0,
+                ),
+                Vehicle(
+                    "b",
+                    lat=-34.59,
+                    lon=-58.42,
+                    timestamp=now - 10,
+                    label="2",
+                    direction_id=1,
+                ),
             ]
         },
     )
@@ -249,6 +263,13 @@ def test_route_vehicles_endpoint_returns_the_buses_of_the_line(live_152a):
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/geo+json"
     assert sorted(f["id"] for f in response.json()["features"]) == ["a", "b"]
+
+
+def test_route_vehicles_endpoint_sends_the_direction_for_the_color(live_152a):
+    features = live_152a.get("/api/v1/routes/1001/vehicles").json()["features"]
+
+    directions = {f["id"]: f["properties"]["direction_id"] for f in features}
+    assert directions == {"a": 0, "b": 1}
 
 
 def test_route_vehicles_endpoint_is_empty_for_a_line_without_live_data(live_152a):
@@ -383,7 +404,6 @@ def test_route_page_points_the_map_to_the_geojson(client):
     assert 'data-geojson-url="/api/v1/routes/1001/geojson"' in html
 
 
-
 def test_route_page_points_the_map_to_the_vehicles(client):
     html = client.get("/routes/1001").text
 
@@ -393,6 +413,7 @@ def test_route_page_points_the_map_to_the_vehicles(client):
 def test_route_page_has_a_single_map(client):
     # route.js finds the map by id, so a second one would be left empty
     assert client.get("/routes/1001").text.count('id="map"') == 1
+
 
 def test_route_page_loads_maplibre_before_route_js(client):
     # Both are deferred, so they run in this order

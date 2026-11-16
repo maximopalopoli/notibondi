@@ -23,6 +23,9 @@ class Vehicle:
     lon: float
     timestamp: int  # Unix seconds of the position, from the feed
     label: str
+    # 0 or 1, like in the static GTFS. The feed leaves out 0 (its default
+    # value), so a missing direction_id reads as 0.
+    direction_id: int
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,7 @@ def group_vehicles(
                 lon=v.position.longitude,
                 timestamp=v.timestamp,
                 label=v.vehicle.label,
+                direction_id=v.trip.direction_id,
             )
         )
     return dict(by_route)

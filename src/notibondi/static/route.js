@@ -4,22 +4,44 @@ const map = new maplibregl.Map({
   container: el,
   center: [-58.44, -34.61], // [lon, lat], only until fitBounds runs
   zoom: 11,
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-        attribution: "© OpenStreetMap contributors",
-      },
-    },
-    layers: [{ id: "osm", type: "raster", source: "osm" }],
-  },
+  // A light grey vector style, so the route is the main thing on the map.
+  // It brings its own attribution (OpenFreeMap and OpenStreetMap).
+  style: "https://tiles.openfreemap.org/styles/positron",
 });
 
 // direction 0 is blue, direction 1 is red
-const DIRECTION_COLOR = ["match", ["get", "direction_id"], 0, "#2563eb", "#dc2626"];
+const BLUE = "#2563eb";
+const RED = "#dc2626";
+const DIRECTION_COLOR = ["match", ["get", "direction_id"], 0, BLUE, RED];
+
+// The arrows are drawn here instead of loading an image file. They point
+// right: on a "line" symbol, right means "forward along the line", and the
+// shapes go the way the bus goes.
+function arrowImage(color) {
+  const size = 28; // 14 px on the screen, drawn at 2x so it looks sharp
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  ctx.beginPath();
+  ctx.moveTo(size * 0.2, size * 0.15);
+  ctx.lineTo(size * 0.85, size * 0.5);
+  ctx.lineTo(size * 0.2, size * 0.85);
+  ctx.lineTo(size * 0.4, size * 0.5);
+  ctx.closePath();
+
+  // the white border first, then the color on top, so the arrow reads on
+  // the line and on the grey map
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#ffffff";
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
 
 map.on("load", async () => {
   const response = await fetch(el.dataset.geojsonUrl);
@@ -37,6 +59,25 @@ map.on("load", async () => {
     source: "route",
     filter: ["==", ["geometry-type"], "LineString"],
     paint: { "line-color": DIRECTION_COLOR, "line-width": 4 },
+  });
+
+  map.addImage("arrow-0", arrowImage(BLUE), { pixelRatio: 2 });
+  map.addImage("arrow-1", arrowImage(RED), { pixelRatio: 2 });
+
+  // after the lines and before the stops, so stops and buses stay on top
+  map.addLayer({
+    id: "arrows",
+    type: "symbol",
+    source: "route",
+    filter: ["==", ["geometry-type"], "LineString"],
+    layout: {
+      "symbol-placement": "line",
+      "symbol-spacing": 80, // pixels between two arrows
+      "icon-image": ["match", ["get", "direction_id"], 0, "arrow-0", "arrow-1"],
+      "icon-allow-overlap": true,
+      // don't hide the street names of the base map
+      "icon-ignore-placement": true,
+    },
   });
 
   map.addLayer({

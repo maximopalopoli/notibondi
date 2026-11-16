@@ -76,7 +76,11 @@ def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
                         "type": "Point",
                         "coordinates": [v.lon, v.lat],
                     },
-                    "properties": {"label": v.label, "timestamp": v.timestamp},
+                    "properties": {
+                        "label": v.label,
+                        "timestamp": v.timestamp,
+                        "direction_id": v.direction_id,
+                    },
                 }
             )
     return {"type": "FeatureCollection", "features": features}

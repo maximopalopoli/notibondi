@@ -389,7 +389,25 @@ def test_group_vehicles_reads_the_bus_and_its_position(vehicles_205):
         lon=pytest.approx(-58.3923416),
         timestamp=1794830100,
         label="2429-4868",
+        direction_id=0,
     )
+
+
+def test_group_vehicles_reads_the_direction():
+    # direction 0 is the default, so the feed only sends 1
+    feed = gtfs_realtime_pb2.FeedMessage()
+    going = feed.entity.add(id="1").vehicle
+    going.trip.route_id = "205"
+    going.vehicle.id = "a"
+    coming = feed.entity.add(id="2").vehicle
+    coming.trip.route_id = "206"
+    coming.trip.direction_id = 1
+    coming.vehicle.id = "b"
+
+    vehicles = group_vehicles(feed)
+
+    assert vehicles["205"][0].direction_id == 0
+    assert vehicles["206"][0].direction_id == 1
 
 
 def test_group_vehicles_drops_buses_without_a_trip():

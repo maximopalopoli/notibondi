@@ -458,7 +458,14 @@ def live_108(settings):
 
 
 def bus(vehicle_id: str, timestamp: int = SAMPLE_NOW) -> Vehicle:
-    return Vehicle(vehicle_id, lat=-34.6, lon=-58.4, timestamp=timestamp, label="x")
+    return Vehicle(
+        vehicle_id,
+        lat=-34.6,
+        lon=-58.4,
+        timestamp=timestamp,
+        label="x",
+        direction_id=0,
+    )
 
 
 def test_vehicles_geojson_is_a_feature_collection(live_108):
@@ -478,7 +485,11 @@ def test_vehicles_geojson_makes_one_point_per_bus(live_108):
     assert feature["geometry"]["coordinates"] == pytest.approx(
         [-58.3923416, -34.5912895]
     )
-    assert feature["properties"] == {"label": "2429-4868", "timestamp": 1794830100}
+    assert feature["properties"] == {
+        "label": "2429-4868",
+        "timestamp": 1794830100,
+        "direction_id": 0,
+    }
 
 
 def test_vehicles_geojson_drops_positions_older_than_5_minutes():
