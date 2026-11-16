@@ -17,6 +17,15 @@ MAX_DELAY_SECONDS = 12 * 60 * 60
 
 
 @dataclass(frozen=True)
+class Vehicle:
+    vehicle_id: str
+    lat: float
+    lon: float
+    timestamp: int  # Unix seconds of the position, from the feed
+    label: str
+
+
+@dataclass(frozen=True)
 class LiveArrival:
     line: str  # resolved by stops, e.g. "108A"
     trip_id: str  # only meaningful inside the feed
@@ -54,6 +63,29 @@ def build_index(
     for arrivals in index.values():
         arrivals.sort(key=lambda a: a.arrival_time)
     return dict(index)
+
+
+def group_vehicles(
+    feed: gtfs_realtime_pb2.FeedMessage,
+) -> dict[str, list[Vehicle]]:
+    """The buses in the feed, by live route_id. Buses without a trip are dropped."""
+    by_route = defaultdict(list)
+    for entity in feed.entity:
+        if not entity.HasField("vehicle"):
+            continue
+        v = entity.vehicle  # a VehiclePosition; v.vehicle is the bus itself
+        if not v.HasField("trip"):
+            continue
+        by_route[v.trip.route_id].append(
+            Vehicle(
+                vehicle_id=v.vehicle.id,
+                lat=v.position.latitude,
+                lon=v.position.longitude,
+                timestamp=v.timestamp,
+                label=v.vehicle.label,
+            )
+        )
+    return dict(by_route)
 
 
 def collect_stops_by_route(

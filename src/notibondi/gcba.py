@@ -9,16 +9,27 @@ class GcbaError(Exception):
     """Any failure getting the feed: network, bad status or bad body."""
 
 
-async def fetch_trip_updates(
-    client: httpx2.AsyncClient, settings: Settings
+TRIP_UPDATES_TIMEOUT = 30
+# The full feed is ~1.5 MB. TODO: measure a good download and use 2-3x that.
+VEHICLE_POSITIONS_TIMEOUT = 20
+
+
+async def _fetch_feed(
+    client: httpx2.AsyncClient,
+    settings: Settings,
+    path: str,
+    timeout: float,
+    params: dict[str, str] | None = None,
 ) -> gtfs_realtime_pb2.FeedMessage:
-    params = {
+    all_params = {
         "client_id": settings.gcba_client_id,
         "client_secret": settings.gcba_client_secret.get_secret_value(),
+        **(params or {}),
     }
+
     try:
         resp = await client.get(
-            f"{settings.gcba_base_url}/colectivos/tripUpdates", params=params
+            f"{settings.gcba_base_url}{path}", params=all_params, timeout=timeout
         )
     except httpx2.RequestError as e:
         raise GcbaError(f"request failed: {type(e).__name__}") from e
@@ -32,3 +43,19 @@ async def fetch_trip_updates(
     except DecodeError as e:
         raise GcbaError("response is not a valid protobuf") from e
     return feed
+
+
+async def fetch_trip_updates(
+    client: httpx2.AsyncClient, settings: Settings
+) -> gtfs_realtime_pb2.FeedMessage:
+    return await _fetch_feed(
+        client, settings, "/colectivos/tripUpdates", TRIP_UPDATES_TIMEOUT
+    )
+
+
+async def fetch_vehicle_positions(
+    client: httpx2.AsyncClient, settings: Settings
+) -> gtfs_realtime_pb2.FeedMessage:
+    return await _fetch_feed(
+        client, settings, "/colectivos/vehiclePositions", VEHICLE_POSITIONS_TIMEOUT
+    )

@@ -4,7 +4,7 @@ import httpx2
 import pytest
 
 from notibondi.config import Settings
-from notibondi.gcba import GcbaError, fetch_trip_updates
+from notibondi.gcba import GcbaError, fetch_trip_updates, fetch_vehicle_positions
 
 FEED = Path(__file__).parent / "fixtures" / "trip_updates_205.pb"
 
@@ -55,6 +55,35 @@ async def test_sends_the_credentials_to_the_trip_updates_url(settings):
     assert url.path == "/colectivos/tripUpdates"
     assert url.params["client_id"] == "the-id"
     assert url.params["client_secret"] == "the-secret"
+
+
+@pytest.mark.anyio
+async def test_vehicle_positions_uses_its_own_url_and_the_credentials(settings):
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        body = (FEED.parent / "vehicle_positions_205.pb").read_bytes()
+        return httpx2.Response(200, content=body)
+
+    async with client_with(handler) as c:
+        feed = await fetch_vehicle_positions(c, settings)
+
+    url = seen[0].url
+    assert url.path == "/colectivos/vehiclePositions"
+    assert url.params["client_id"] == "the-id"
+    assert url.params["client_secret"] == "the-secret"
+    assert feed.entity[0].HasField("vehicle")
+
+
+@pytest.mark.anyio
+async def test_a_timeout_is_a_gcba_error(settings):
+    def handler(req):
+        raise httpx2.ReadTimeout("too slow", request=req)
+
+    async with client_with(handler) as c:
+        with pytest.raises(GcbaError, match="ReadTimeout"):
+            await fetch_vehicle_positions(c, settings)
 
 
 @pytest.mark.anyio

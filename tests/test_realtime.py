@@ -7,8 +7,10 @@ from google.transit import gtfs_realtime_pb2
 from notibondi.realtime import (
     MAX_DELAY_SECONDS,
     LiveArrival,
+    Vehicle,
     build_index,
     collect_stops_by_route,
+    group_vehicles,
     load_lines_by_stop,
     merge_arrivals,
     resolve_lines,
@@ -345,3 +347,52 @@ def test_merge_keeps_only_the_earliest_max_arrivals():
 
     assert len(merged) == MAX_ARRIVALS
     assert [a.minutes for a in merged] == list(range(1, MAX_ARRIVALS + 1))
+
+
+# group_vehicles
+
+
+@pytest.fixture
+def vehicles_205():
+    # Line 108 (live route 205), saved on 2026-11-16 at 08:55.
+    return load_feed("vehicle_positions_205.pb")
+
+
+def test_group_vehicles_groups_by_live_route_id(vehicles_205):
+    grouped = group_vehicles(vehicles_205)
+
+    assert list(grouped) == ["205"]
+    assert len(grouped["205"]) == 11
+
+
+def test_group_vehicles_reads_the_bus_and_its_position(vehicles_205):
+    bus = next(
+        v for v in group_vehicles(vehicles_205)["205"] if v.vehicle_id == "94843"
+    )
+
+    assert bus == Vehicle(
+        vehicle_id="94843",
+        lat=pytest.approx(-34.5912895),
+        lon=pytest.approx(-58.3923416),
+        timestamp=1794830100,
+        label="2429-4868",
+    )
+
+
+def test_group_vehicles_drops_buses_without_a_trip():
+    feed = gtfs_realtime_pb2.FeedMessage()
+    with_trip = feed.entity.add(id="1").vehicle
+    with_trip.trip.route_id = "205"
+    with_trip.vehicle.id = "a"
+    without_trip = feed.entity.add(id="2").vehicle
+    without_trip.vehicle.id = "b"
+
+    grouped = group_vehicles(feed)
+
+    assert [v.vehicle_id for v in grouped["205"]] == ["a"]
+    assert sum(len(vs) for vs in grouped.values()) == 1
+
+
+def test_group_vehicles_skips_entities_that_are_not_vehicles(feed_205):
+    # A tripUpdates feed has no vehicle entities at all
+    assert group_vehicles(feed_205) == {}
