@@ -57,6 +57,31 @@ class LiveFeed:
     lines: dict[str, str] = field(default_factory=dict)
 
 
+MAX_VEHICLE_AGE_SECONDS = 60 * 5
+
+
+def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
+    features = []
+    for live_route_id, name in live.lines.items():
+        if name != line:
+            continue
+        for v in live.vehicles.get(live_route_id, []):
+            if now - v.timestamp > MAX_VEHICLE_AGE_SECONDS:
+                continue
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": v.vehicle_id,
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [v.lon, v.lat],
+                    },
+                    "properties": {"label": v.label, "timestamp": v.timestamp},
+                }
+            )
+    return {"type": "FeatureCollection", "features": features}
+
+
 async def poll_forever(
     name: str,
     refresh: Callable[[], Awaitable[None]],
@@ -89,10 +114,11 @@ async def refresh_forever(
 ):
     async def refresh():
         feed = await fetch_trip_updates(client, settings)
-        index = await asyncio.to_thread(build_index, feed, lines_by_stop)
+        index, lines = await asyncio.to_thread(build_index, feed, lines_by_stop)
         # Only reached if both lines above worked. Replacing the whole index
         # in one step means readers see the old one or the new one, no lock.
         live.index = index
+        live.lines = lines
         live.fetched_at = time.monotonic()
         log.info("feed refreshed: %d stops", len(index))
 

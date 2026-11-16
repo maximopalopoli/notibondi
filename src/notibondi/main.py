@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -39,6 +40,7 @@ from notibondi.worker import (
     feed_health,
     refresh_forever,
     refresh_vehicles_forever,
+    vehicles_geojson,
 )
 
 logging.basicConfig(
@@ -206,6 +208,17 @@ def route_geojson_api(route_id: str, conn: Conn):
         raise HTTPException(status_code=404, detail="Route not found")
     return JSONResponse(
         content=route_geojson(conn, route_id), media_type="application/geo+json"
+    )
+
+
+@app.get("/api/v1/routes/{route_id}/vehicles")
+def route_vehicles_api(route_id: str, conn: Conn, live: Live):
+    route = get_route(conn, route_id)
+    if route is None:
+        raise HTTPException(status_code=404, detail="Route not found")
+    return JSONResponse(
+        content=vehicles_geojson(live, route.route_short_name, time.time()),
+        media_type="application/geo+json",
     )
 
 

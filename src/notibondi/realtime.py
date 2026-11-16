@@ -35,7 +35,7 @@ class LiveArrival:
 def build_index(
     feed: gtfs_realtime_pb2.FeedMessage,
     lines_by_stop: dict[str, set[str]],
-) -> dict[str, list[LiveArrival]]:
+) -> tuple[dict[str, list[LiveArrival]], dict[str, str]]:
     """Map each stop_id to its live arrivals, sorted by time."""
 
     lines = resolve_lines(collect_stops_by_route(feed), lines_by_stop)
@@ -62,7 +62,8 @@ def build_index(
 
     for arrivals in index.values():
         arrivals.sort(key=lambda a: a.arrival_time)
-    return dict(index)
+
+    return dict(index), lines
 
 
 def group_vehicles(

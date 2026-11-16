@@ -153,7 +153,7 @@ def test_build_index_gives_arrivals_for_a_known_stop(feed_205):
     stops = collect_stops_by_route(feed_205)["205"]
     lines_by_stop = {stop: {"108A"} for stop in stops}
 
-    index = build_index(feed_205, lines_by_stop)
+    index, _ = build_index(feed_205, lines_by_stop)
 
     # 20724 is the stop with the most arrivals in the sample.
     arrivals = index["20724"]
@@ -166,7 +166,9 @@ def test_build_index_has_an_entry_for_every_stop_with_an_arrival(feed_205):
     stops = collect_stops_by_route(feed_205)["205"]
     lines_by_stop = {stop: {"108A"} for stop in stops}
 
-    assert set(build_index(feed_205, lines_by_stop)) == stops
+    index, _ = build_index(feed_205, lines_by_stop)
+
+    assert set(index) == stops
 
 
 def test_build_index_sorts_each_stop_by_arrival_time():
@@ -176,7 +178,7 @@ def test_build_index_sorts_each_stop_by_arrival_time():
         ("1", "middle", [("A", 1500, 0)]),
     )
 
-    index = build_index(feed, {"A": {"60"}})
+    index, _ = build_index(feed, {"A": {"60"}})
 
     assert [a.trip_id for a in index["A"]] == ["early", "middle", "late"]
 
@@ -184,7 +186,7 @@ def test_build_index_sorts_each_stop_by_arrival_time():
 def test_build_index_stores_line_trip_and_absolute_time():
     feed = make_feed(("1", "t1", [("A", 1794492430, 120)]))
 
-    index = build_index(feed, {"A": {"60"}})
+    index, _ = build_index(feed, {"A": {"60"}})
 
     assert index == {
         "A": [LiveArrival(line="60", trip_id="t1", arrival_time=1794492430)]
@@ -194,7 +196,7 @@ def test_build_index_stores_line_trip_and_absolute_time():
 def test_build_index_skips_stops_without_arrival():
     feed = make_feed(("1", "t1", [("A", 1000, 0), ("B", 1100, 0), "S00098641"]))
 
-    index = build_index(feed, {"A": {"60"}, "B": {"60"}})
+    index, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
 
     assert "S00098641" not in index
     assert set(index) == {"A", "B"}
@@ -206,7 +208,7 @@ def test_build_index_skips_the_midnight_delay_bug():
         ("1", "bug", [("A", 900, 84_500), ("B", 950, -84_500)]),
     )
 
-    index = build_index(feed, {"A": {"60"}, "B": {"60"}})
+    index, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
 
     assert [a.trip_id for a in index["A"]] == ["ok"]
     assert [a.trip_id for a in index["B"]] == ["ok"]
@@ -215,7 +217,9 @@ def test_build_index_skips_the_midnight_delay_bug():
 def test_build_index_keeps_a_delay_right_at_the_limit():
     feed = make_feed(("1", "t1", [("A", 1000, MAX_DELAY_SECONDS)]))
 
-    assert "A" in build_index(feed, {"A": {"60"}})
+    index, _ = build_index(feed, {"A": {"60"}})
+
+    assert "A" in index
 
 
 def test_build_index_skips_routes_without_a_resolved_line():
@@ -227,14 +231,23 @@ def test_build_index_skips_routes_without_a_resolved_line():
     # Route 2: 60 and 152A get 1 vote each (X is on no line), a tie, so no line.
     lines_by_stop = {"A": {"60", "152A"}, "B": {"60"}, "X": set()}
 
-    index = build_index(feed, lines_by_stop)
+    index, _ = build_index(feed, lines_by_stop)
 
     assert [a.trip_id for a in index["A"]] == ["known"]
     assert "X" not in index
 
 
 def test_build_index_of_an_empty_feed_is_empty():
-    assert build_index(make_feed(), {"A": {"60"}}) == {}
+    assert build_index(make_feed(), {"A": {"60"}}) == ({}, {})
+
+
+def test_build_index_also_returns_the_resolved_lines(feed_205):
+    stops = collect_stops_by_route(feed_205)["205"]
+    lines_by_stop = {stop: {"108A"} for stop in stops}
+
+    _, lines = build_index(feed_205, lines_by_stop)
+
+    assert lines == {"205": "108A"}
 
 
 # merge_arrivals

@@ -1,6 +1,10 @@
+import time
+
 import pytest
 from sqlalchemy import text
 
+from notibondi.main import app, get_live
+from notibondi.realtime import Vehicle
 from notibondi.routes import (
     Route,
     get_route,
@@ -8,6 +12,7 @@ from notibondi.routes import (
     route_geojson,
     search_routes,
 )
+from notibondi.worker import LiveFeed
 
 # search_routes
 
@@ -216,6 +221,48 @@ def test_routes_search_is_not_taken_as_a_route_id(client):
     response = client.get("/api/v1/routes/search", params={"q": "152"})
 
     assert response.status_code == 200
+
+
+# GET /api/v1/routes/{route_id}/vehicles
+
+
+@pytest.fixture
+def live_152a(client):
+    """The client fixture, but with two fresh 152A buses in the live feed."""
+    now = int(time.time())
+    live = LiveFeed(
+        lines={"311": "152A"},
+        vehicles={
+            "311": [
+                Vehicle("a", lat=-34.58, lon=-58.42, timestamp=now, label="1"),
+                Vehicle("b", lat=-34.59, lon=-58.42, timestamp=now - 10, label="2"),
+            ]
+        },
+    )
+    app.dependency_overrides[get_live] = lambda: live
+    return client
+
+
+def test_route_vehicles_endpoint_returns_the_buses_of_the_line(live_152a):
+    response = live_152a.get("/api/v1/routes/1001/vehicles")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/geo+json"
+    assert sorted(f["id"] for f in response.json()["features"]) == ["a", "b"]
+
+
+def test_route_vehicles_endpoint_is_empty_for_a_line_without_live_data(live_152a):
+    # 15A (route 1003) has no live route in the feed
+    response = live_152a.get("/api/v1/routes/1003/vehicles")
+
+    assert response.status_code == 200
+    assert response.json() == {"type": "FeatureCollection", "features": []}
+
+
+def test_route_vehicles_endpoint_returns_404_for_unknown_route(client):
+    response = client.get("/api/v1/routes/no-existe/vehicles")
+
+    assert response.status_code == 404
 
 
 # GET /api/v1/routes/search

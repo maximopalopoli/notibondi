@@ -11,7 +11,7 @@ from google.transit import gtfs_realtime_pb2
 from notibondi import worker
 from notibondi.config import Settings
 from notibondi.gcba import GcbaError
-from notibondi.realtime import collect_stops_by_route
+from notibondi.realtime import Vehicle, collect_stops_by_route
 from notibondi.schedules import BUENOS_AIRES
 from notibondi.worker import (
     OFF_PEAK_SECONDS,
@@ -22,6 +22,7 @@ from notibondi.worker import (
     refresh_seconds,
     refresh_vehicles_forever,
     retry_seconds,
+    vehicles_geojson,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -253,6 +254,20 @@ async def test_a_good_download_fills_the_index(settings, lines_by_stop):
 
 
 @pytest.mark.anyio
+async def test_a_good_download_also_stores_the_resolved_lines(settings, lines_by_stop):
+    live = LiveFeed()
+    client, _ = responses(200)
+
+    async with client:
+        await run_until(
+            refresh_forever(live, client, settings, lines_by_stop),
+            lambda: live.fetched_at is not None,
+        )
+
+    assert live.lines == {"205": "108A"}
+
+
+@pytest.mark.anyio
 async def test_a_failure_keeps_the_last_good_index(settings, lines_by_stop):
     live = LiveFeed()
     client, calls = responses(200, 500, 500)
@@ -426,3 +441,84 @@ async def test_cancel_stops_the_vehicles_loop(settings, no_waiting_for_vehicles)
         )
 
     assert task.cancelled()
+
+
+# vehicles_geojson
+
+# The newest position in vehicle_positions_205.pb (2026-11-16, 08:55)
+SAMPLE_NOW = 1794830100
+
+
+@pytest.fixture
+def live_108(settings):
+    """A LiveFeed with the 108A sample: live route 205 resolves to 108A."""
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(VEHICLES_BYTES)
+    return LiveFeed(lines={"205": "108A"}, vehicles=worker.group_vehicles(feed))
+
+
+def bus(vehicle_id: str, timestamp: int = SAMPLE_NOW) -> Vehicle:
+    return Vehicle(vehicle_id, lat=-34.6, lon=-58.4, timestamp=timestamp, label="x")
+
+
+def test_vehicles_geojson_is_a_feature_collection(live_108):
+    collection = vehicles_geojson(live_108, "108A", SAMPLE_NOW)
+
+    assert collection["type"] == "FeatureCollection"
+    assert len(collection["features"]) == 11
+
+
+def test_vehicles_geojson_makes_one_point_per_bus(live_108):
+    features = vehicles_geojson(live_108, "108A", SAMPLE_NOW)["features"]
+    feature = next(f for f in features if f["id"] == "94843")
+
+    assert feature["type"] == "Feature"
+    assert feature["geometry"]["type"] == "Point"
+    # GeoJSON puts longitude first
+    assert feature["geometry"]["coordinates"] == pytest.approx(
+        [-58.3923416, -34.5912895]
+    )
+    assert feature["properties"] == {"label": "2429-4868", "timestamp": 1794830100}
+
+
+def test_vehicles_geojson_drops_positions_older_than_5_minutes():
+    live = LiveFeed(
+        lines={"205": "108A"},
+        vehicles={
+            "205": [
+                bus("fresh"),
+                bus("limit", SAMPLE_NOW - 300),
+                bus("old", SAMPLE_NOW - 301),
+            ]
+        },
+    )
+
+    features = vehicles_geojson(live, "108A", SAMPLE_NOW)["features"]
+
+    assert [f["id"] for f in features] == ["fresh", "limit"]
+
+
+def test_vehicles_geojson_joins_every_live_route_of_the_line():
+    # 108A comes in the feed as two live routes, 205 and 206
+    live = LiveFeed(
+        lines={"205": "108A", "206": "108A", "311": "152A"},
+        vehicles={"205": [bus("a")], "206": [bus("b")], "311": [bus("c")]},
+    )
+
+    features = vehicles_geojson(live, "108A", SAMPLE_NOW)["features"]
+
+    assert sorted(f["id"] for f in features) == ["a", "b"]
+
+
+def test_vehicles_geojson_is_empty_for_a_line_without_live_routes(live_108):
+    assert vehicles_geojson(live_108, "152A", SAMPLE_NOW) == {
+        "type": "FeatureCollection",
+        "features": [],
+    }
+
+
+def test_vehicles_geojson_skips_a_live_route_without_positions():
+    # lines and vehicles come from two feeds, so they may not have the same routes
+    live = LiveFeed(lines={"205": "108A"}, vehicles={})
+
+    assert vehicles_geojson(live, "108A", SAMPLE_NOW)["features"] == []
