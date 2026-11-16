@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 
 from notibondi.routes import (
     Route,
@@ -164,6 +165,20 @@ def test_route_geojson_tags_each_stop_with_its_direction(conn):
         (1, "205696"),
     ]
     assert stops[1]["properties"]["stop_name"] == "PLAZA ITALIA"
+
+
+def test_route_geojson_keeps_the_stops_when_a_shape_is_missing(conn):
+    # The conn fixture rolls back at the end, so this delete doesn't leak
+    inbound_shape = route_directions(conn, "1001")[1].shape_id
+    conn.execute(
+        text("DELETE FROM shapes WHERE shape_id = :shape_id"),
+        {"shape_id": inbound_shape},
+    )
+
+    collection = route_geojson(conn, "1001")
+
+    assert [line["properties"]["direction_id"] for line in lines_of(collection)] == [0]
+    assert len(points_of(collection)) == 6
 
 
 def test_route_geojson_is_empty_for_a_route_without_trips(conn):

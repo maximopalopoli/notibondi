@@ -23,6 +23,10 @@ const DIRECTION_COLOR = ["match", ["get", "direction_id"], 0, "#2563eb", "#dc262
 
 map.on("load", async () => {
   const response = await fetch(el.dataset.geojsonUrl);
+  if (!response.ok) {
+    console.error("could not load the route", response.status);
+    return;
+  }
   const data = await response.json();
 
   map.addSource("route", { type: "geojson", data });

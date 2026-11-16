@@ -80,9 +80,7 @@ def route_directions(conn: Connection, route_id: str) -> list[Direction]:
 def route_geojson(conn: Connection, route_id: str) -> dict:
     directions = route_directions(conn, route_id)
 
-    shapes = []
-    for direction in directions:
-        shapes.append(direction.shape_id)
+    shape_ids = [d.shape_id for d in directions]
 
     rows = conn.execute(
         text("""
@@ -92,7 +90,7 @@ def route_geojson(conn: Connection, route_id: str) -> dict:
         WHERE shape_id = ANY(:shape_ids)
         GROUP BY shape_id
         """),
-        {"shape_ids": shapes},
+        {"shape_ids": shape_ids},
     )
 
     lines = {row.shape_id: json.loads(row.line) for row in rows}
@@ -100,16 +98,20 @@ def route_geojson(conn: Connection, route_id: str) -> dict:
     features = []
 
     for d in directions:
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": lines[d.shape_id],
-                "properties": {
-                    "direction_id": d.direction_id,
-                    "trip_headsign": d.trip_headsign,
-                },
-            }
-        )
+        # A trip can point to a shape that isn't in shapes.txt: show its stops
+        # anyway instead of failing the whole map
+        line = lines.get(d.shape_id)
+        if line is not None:
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": line,
+                    "properties": {
+                        "direction_id": d.direction_id,
+                        "trip_headsign": d.trip_headsign,
+                    },
+                }
+            )
 
         for s in d.stops:
             features.append(

@@ -174,7 +174,10 @@ def stop_arrivals_partial(
     )
 
 
-LineQ = Annotated[str, Query(min_length=1, max_length=10, pattern="^[0-9A-Za-z]+$")]
+# search_routes puts the line name inside a regex, so only letters and digits
+LINE_NAME_PATTERN = "^[0-9A-Za-z]{1,10}$"
+LINE_NAME = re.compile(LINE_NAME_PATTERN)
+LineQ = Annotated[str, Query(pattern=LINE_NAME_PATTERN)]
 
 
 @app.get("/api/v1/routes/search", response_model=list[Route])
@@ -191,9 +194,6 @@ def route_geojson_api(route_id: str, conn: Conn):
     )
 
 
-LINE_NAME = re.compile(r"[0-9A-Za-z]{1,10}")  # same rule as LineQ
-
-
 @app.get("/routes", response_class=HTMLResponse, include_in_schema=False)
 def routes_page(request: Request):
     return templates.TemplateResponse(request, "routes.html")
@@ -206,7 +206,6 @@ def search_routes_partial(
     request: Request, conn: Conn, q: Annotated[str, Query(max_length=100)] = ""
 ):
     q = q.strip()
-    # search_routes puts q inside a regex, so only letters and digits get in
     if not LINE_NAME.fullmatch(q):
         return HTMLResponse("")
     return templates.TemplateResponse(
