@@ -65,7 +65,11 @@ def test_health_endpoint_reports_a_fresh_feed(client_with_live):
     response = client_with_live(fetched_ago(10)).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "feed_age_seconds": 10}
+    assert response.json() == {
+        "status": "ok",
+        "feed_age_seconds": 10,
+        "vehicles_age_seconds": None,
+    }
 
 
 def test_health_endpoint_stays_200_when_degraded(client_with_live):
@@ -73,9 +77,33 @@ def test_health_endpoint_stays_200_when_degraded(client_with_live):
     response = client_with_live(LiveFeed()).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "degraded", "feed_age_seconds": None}
+    assert response.json() == {
+        "status": "degraded",
+        "feed_age_seconds": None,
+        "vehicles_age_seconds": None,
+    }
 
 
 def test_health_is_registered_once():
     paths = [route.path for route in app.routes if route.path == "/health"]
     assert paths == ["/health"]
+
+
+def test_the_positions_age_is_reported():
+    live = LiveFeed(fetched_at=time.monotonic(), vehicles_at=time.monotonic() - 30.6)
+
+    assert feed_health(live).vehicles_age_seconds == 30
+
+
+def test_no_positions_yet_has_no_age():
+    assert feed_health(fetched_ago(10)).vehicles_age_seconds is None
+
+
+def test_old_positions_do_not_make_the_app_degraded():
+    # The map gets worse, but the arrivals still work
+    live = LiveFeed(
+        fetched_at=time.monotonic(),
+        vehicles_at=time.monotonic() - MAX_FEED_AGE_SECONDS * 10,
+    )
+
+    assert feed_health(live).status == "ok"

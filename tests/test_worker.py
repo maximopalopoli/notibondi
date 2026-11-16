@@ -20,10 +20,13 @@ from notibondi.worker import (
     poll_forever,
     refresh_forever,
     refresh_seconds,
+    refresh_vehicles_forever,
     retry_seconds,
 )
 
-FEED_BYTES = (Path(__file__).parent / "fixtures" / "trip_updates_205.pb").read_bytes()
+FIXTURES = Path(__file__).parent / "fixtures"
+FEED_BYTES = (FIXTURES / "trip_updates_205.pb").read_bytes()
+VEHICLES_BYTES = (FIXTURES / "vehicle_positions_205.pb").read_bytes()
 
 
 @pytest.fixture
@@ -54,17 +57,18 @@ def no_waiting(monkeypatch):
     monkeypatch.setattr(worker, "refresh_seconds", lambda at: 0)
 
 
-def responses(*statuses: int):
+def responses(*statuses: int, body: bytes = FEED_BYTES):
     """A fake GCBA that answers each request with the next status in order.
 
-    200 sends the real feed sample. After the list ends, it keeps sending 500.
+    200 sends body (the tripUpdates sample by default). After the list ends,
+    it keeps sending 500.
     """
     calls = []
 
     def handler(request):
         status = statuses[len(calls)] if len(calls) < len(statuses) else 500
         calls.append(status)
-        content = FEED_BYTES if status == 200 else b""
+        content = body if status == 200 else b""
         return httpx2.Response(status, content=content)
 
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
@@ -342,6 +346,82 @@ async def test_cancel_stops_the_loop(settings, lines_by_stop):
     async with client:
         task = await run_until(
             refresh_forever(live, client, settings, lines_by_stop),
+            lambda: len(calls) >= 1,
+        )
+
+    assert task.cancelled()
+
+
+# refresh_vehicles_forever
+
+
+@pytest.fixture
+def no_waiting_for_vehicles(monkeypatch):
+    monkeypatch.setattr(worker, "VEHICLES_SECONDS", 0)
+
+
+@pytest.mark.anyio
+async def test_a_good_download_fills_the_vehicles(settings, no_waiting_for_vehicles):
+    live = LiveFeed()
+    client, _ = responses(200, body=VEHICLES_BYTES)
+
+    async with client:
+        await run_until(
+            refresh_vehicles_forever(live, client, settings),
+            lambda: live.vehicles_at is not None,
+        )
+
+    assert list(live.vehicles) == ["205"]
+    assert len(live.vehicles["205"]) == 11
+
+
+@pytest.mark.anyio
+async def test_a_failure_keeps_the_last_good_vehicles(
+    settings, no_waiting_for_vehicles
+):
+    live = LiveFeed()
+    client, calls = responses(200, 500, 500, body=VEHICLES_BYTES)
+    first_good = {}
+
+    def two_failures_done():
+        if live.vehicles_at is not None and not first_good:
+            first_good.update(vehicles=live.vehicles, at=live.vehicles_at)
+        return len(calls) >= 4
+
+    async with client:
+        await run_until(
+            refresh_vehicles_forever(live, client, settings), two_failures_done
+        )
+
+    assert live.vehicles is first_good["vehicles"]
+    assert live.vehicles_at == first_good["at"]
+
+
+@pytest.mark.anyio
+async def test_the_vehicles_loop_does_not_touch_the_arrivals(
+    settings, no_waiting_for_vehicles
+):
+    live = LiveFeed()
+    client, _ = responses(200, body=VEHICLES_BYTES)
+
+    async with client:
+        await run_until(
+            refresh_vehicles_forever(live, client, settings),
+            lambda: live.vehicles_at is not None,
+        )
+
+    assert live.index == {}
+    assert live.fetched_at is None
+
+
+@pytest.mark.anyio
+async def test_cancel_stops_the_vehicles_loop(settings, no_waiting_for_vehicles):
+    live = LiveFeed()
+    client, calls = responses(200, body=VEHICLES_BYTES)
+
+    async with client:
+        task = await run_until(
+            refresh_vehicles_forever(live, client, settings),
             lambda: len(calls) >= 1,
         )
 

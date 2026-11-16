@@ -10,14 +10,17 @@ from httpx2 import AsyncClient
 from pydantic import BaseModel
 
 from notibondi.config import Settings
-from notibondi.gcba import fetch_trip_updates
-from notibondi.realtime import LiveArrival, Vehicle, build_index
+from notibondi.gcba import fetch_trip_updates, fetch_vehicle_positions
+from notibondi.realtime import LiveArrival, Vehicle, build_index, group_vehicles
 from notibondi.schedules import now
 
 PEAK_SECONDS = 30
 OFF_PEAK_SECONDS = 60
 # Weekday rush hours in Buenos Aires: [start, end) in local hours.
 PEAK_HOURS = [(7, 10), (17, 20)]
+
+# The positions change once a minute, at rush hour too (measured 2026-11-16)
+VEHICLES_SECONDS = 60
 
 # After a failed download, retry after 5 s, then 10, 20, 40… (see retry_seconds)
 FIRST_RETRY_SECONDS = 5
@@ -50,7 +53,7 @@ class LiveFeed:
     index: dict[str, list[LiveArrival]] = field(default_factory=dict)
     fetched_at: float | None = None  # time.monotonic() of the last good feed
     vehicles: dict[str, list[Vehicle]] = field(default_factory=dict)
-    vehicles_at: float | None = None
+    vehicles_at: float | None = None  # time.monotonic() of the last good positions
     lines: dict[str, str] = field(default_factory=dict)
 
 
@@ -96,14 +99,44 @@ async def refresh_forever(
     await poll_forever("trip updates", refresh, lambda: refresh_seconds(now()))
 
 
+async def refresh_vehicles_forever(
+    live: LiveFeed,
+    client: AsyncClient,
+    settings: Settings,
+):
+    async def refresh():
+        feed = await fetch_vehicle_positions(client, settings)
+        vehicles = await asyncio.to_thread(group_vehicles, feed)
+        live.vehicles = vehicles
+        live.vehicles_at = time.monotonic()
+        log.info("vehicles refreshed: %d routes", len(vehicles))
+
+    await poll_forever("vehicle positions", refresh, lambda: VEHICLES_SECONDS)
+
+
 class Health(BaseModel):
     status: Literal["ok", "degraded"]
     feed_age_seconds: int | None
+    # Only informative: old positions break the map, not the arrivals
+    vehicles_age_seconds: int | None = None
+
+
+def age_seconds(at: float | None) -> int | None:
+    return None if at is None else int(time.monotonic() - at)
 
 
 def feed_health(live: LiveFeed) -> Health:
+    vehicles_age = age_seconds(live.vehicles_at)
     if live.fetched_at is None:
-        return Health(status="degraded", feed_age_seconds=None)
+        return Health(
+            status="degraded",
+            feed_age_seconds=None,
+            vehicles_age_seconds=vehicles_age,
+        )
     age = time.monotonic() - live.fetched_at
     status = "ok" if age <= MAX_FEED_AGE_SECONDS else "degraded"
-    return Health(status=status, feed_age_seconds=int(age))
+    return Health(
+        status=status,
+        feed_age_seconds=int(age),
+        vehicles_age_seconds=vehicles_age,
+    )

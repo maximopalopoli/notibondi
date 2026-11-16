@@ -9,9 +9,11 @@ class GcbaError(Exception):
     """Any failure getting the feed: network, bad status or bad body."""
 
 
-TRIP_UPDATES_TIMEOUT = 30
-# The full feed is ~1.5 MB. TODO: measure a good download and use 2-3x that.
-VEHICLE_POSITIONS_TIMEOUT = 20
+# A good download took ~29 s on 2026-11-16, so 30 s was too tight
+TRIP_UPDATES_TIMEOUT = 35
+# The full feed is ~1.5 MB. Five good downloads on 2026-11-16 took 1.5 to
+# 19 s, so 20 s would cut off good ones.
+VEHICLE_POSITIONS_TIMEOUT = 30
 
 
 async def _fetch_feed(

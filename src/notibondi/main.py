@@ -33,7 +33,13 @@ from notibondi.stops import (
     search_stops,
     stop_exists,
 )
-from notibondi.worker import Health, LiveFeed, feed_health, refresh_forever
+from notibondi.worker import (
+    Health,
+    LiveFeed,
+    feed_health,
+    refresh_forever,
+    refresh_vehicles_forever,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -48,13 +54,22 @@ async def lifespan(app: FastAPI):
         lines_by_stop = load_lines_by_stop(conn)
     app.state.live = LiveFeed()
     async with httpx2.AsyncClient(timeout=30) as client:
-        task = asyncio.create_task(
-            refresh_forever(app.state.live, client, get_settings(), lines_by_stop)
-        )
+        settings = get_settings()
+        # Two tasks, so a slow positions download never delays the arrivals
+        tasks = [
+            asyncio.create_task(
+                refresh_forever(app.state.live, client, settings, lines_by_stop)
+            ),
+            asyncio.create_task(
+                refresh_vehicles_forever(app.state.live, client, settings)
+            ),
+        ]
         yield
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(lifespan=lifespan)
