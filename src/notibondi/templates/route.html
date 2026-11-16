@@ -10,5 +10,7 @@
 <p><a href="/routes">← Buscar otra línea</a></p>
 <h1>{{ route.route_short_name }}</h1>
 <p>{{ route.route_desc }}</p>
-<div id="map" data-geojson-url="/api/v1/routes/{{ route.route_id }}/geojson"></div>
+<div id="map"
+     data-geojson-url="/api/v1/routes/{{ route.route_id }}/geojson"
+     data-vehicles-url="/api/v1/routes/{{ route.route_id }}/vehicles"></div>
 {% endblock %}

@@ -52,6 +52,22 @@ map.on("load", async () => {
     },
   });
 
+  map.addSource("vehicles", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer({
+    id: "vehicles",
+    type: "circle",
+    source: "vehicles",
+    paint: {
+      "circle-radius": 7,
+      "circle-color": DIRECTION_COLOR,
+      "circle-stroke-color": "#000000",
+      "circle-stroke-width": 2,
+    },
+  });
+
   // zoom to the whole route
   const lines = data.features.filter((f) => f.geometry.type === "LineString");
   if (lines.length > 0) {
@@ -63,4 +79,26 @@ map.on("load", async () => {
     }
     map.fitBounds(bounds, { padding: 40 });
   }
+
+  // only now the "vehicles" source exists, so the first round can draw
+  refreshVehicles();
 });
+
+async function refreshVehicles() {
+  // a hidden tab doesn't need new positions; check again in the next round
+  if (document.hidden) {
+    setTimeout(refreshVehicles, 30_000);
+    return;
+  }
+  try {
+    const response = await fetch(el.dataset.vehiclesUrl);
+    if (response.ok) {
+      map.getSource("vehicles").setData(await response.json());
+    } else {
+      console.error("could not load the buses", response.status);
+    }
+  } catch (error) {
+    console.error("could not load the buses", error);
+  }
+  setTimeout(refreshVehicles, 30_000);
+}

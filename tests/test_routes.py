@@ -383,6 +383,17 @@ def test_route_page_points_the_map_to_the_geojson(client):
     assert 'data-geojson-url="/api/v1/routes/1001/geojson"' in html
 
 
+
+def test_route_page_points_the_map_to_the_vehicles(client):
+    html = client.get("/routes/1001").text
+
+    assert 'data-vehicles-url="/api/v1/routes/1001/vehicles"' in html
+
+
+def test_route_page_has_a_single_map(client):
+    # route.js finds the map by id, so a second one would be left empty
+    assert client.get("/routes/1001").text.count('id="map"') == 1
+
 def test_route_page_loads_maplibre_before_route_js(client):
     # Both are deferred, so they run in this order
     html = client.get("/routes/1001").text
