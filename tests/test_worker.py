@@ -10,14 +10,17 @@ from google.transit import gtfs_realtime_pb2
 
 from notibondi import worker
 from notibondi.config import Settings
+from notibondi.gcba import GcbaError
 from notibondi.realtime import collect_stops_by_route
 from notibondi.schedules import BUENOS_AIRES
 from notibondi.worker import (
     OFF_PEAK_SECONDS,
     PEAK_SECONDS,
     LiveFeed,
+    poll_forever,
     refresh_forever,
     refresh_seconds,
+    retry_seconds,
 )
 
 FEED_BYTES = (Path(__file__).parent / "fixtures" / "trip_updates_205.pb").read_bytes()
@@ -109,6 +112,124 @@ def test_refresh_seconds(when, expected):
     assert refresh_seconds(when) == expected
 
 
+# retry_seconds
+
+
+@pytest.mark.parametrize(
+    ("failures", "expected"),
+    [
+        (0, 60),  # no failure: the normal wait
+        (1, 5),
+        (2, 10),
+        (3, 20),
+        (4, 40),
+        (5, 60),  # 80 would pass the interval
+        (1000, 60),  # a long outage stays at the interval
+    ],
+)
+def test_retry_seconds(failures, expected):
+    assert retry_seconds(failures, interval=60) == expected
+
+
+def test_retry_seconds_never_waits_more_than_a_short_interval():
+    assert retry_seconds(4, interval=30) == 30
+
+
+# poll_forever
+
+
+class Stop(Exception):
+    """Raised by the fake sleep to end poll_forever after some rounds."""
+
+
+def fake_sleep(rounds: int):
+    """A sleep that records each wait and stops the loop after `rounds`."""
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+        if len(waits) >= rounds:
+            raise Stop
+
+    return sleep, waits
+
+
+def refresh_that(*works: bool):
+    """A refresh that succeeds or fails in this order, then keeps failing."""
+    calls = []
+
+    async def refresh():
+        ok = works[len(calls)] if len(calls) < len(works) else False
+        calls.append(ok)
+        if not ok:
+            raise GcbaError("the GCBA is down")
+
+    return refresh, calls
+
+
+@pytest.mark.anyio
+async def test_poll_forever_waits_the_interval_after_each_success():
+    sleep, waits = fake_sleep(rounds=3)
+    refresh, _ = refresh_that(True, True, True)
+
+    with pytest.raises(Stop):
+        await poll_forever("test", refresh, lambda: 60, sleep)
+
+    assert waits == [60, 60, 60]
+
+
+@pytest.mark.anyio
+async def test_poll_forever_asks_the_interval_every_round():
+    # refresh_seconds changes at rush hour, so the loop must not keep the first one
+    sleep, waits = fake_sleep(rounds=3)
+    refresh, _ = refresh_that(True, True, True)
+    intervals = iter([30, 30, 60])
+
+    with pytest.raises(Stop):
+        await poll_forever("test", refresh, lambda: next(intervals), sleep)
+
+    assert waits == [30, 30, 60]
+
+
+@pytest.mark.anyio
+async def test_poll_forever_backs_off_while_failing():
+    sleep, waits = fake_sleep(rounds=7)
+    refresh, calls = refresh_that()  # always fails
+
+    with pytest.raises(Stop):
+        await poll_forever("test", refresh, lambda: 60, sleep)
+
+    assert waits == [5, 10, 20, 40, 60, 60, 60]
+    assert len(calls) == 7  # it kept trying
+
+
+@pytest.mark.anyio
+async def test_poll_forever_success_resets_the_backoff():
+    sleep, waits = fake_sleep(rounds=5)
+    refresh, _ = refresh_that(False, False, True, False, True)
+
+    with pytest.raises(Stop):
+        await poll_forever("test", refresh, lambda: 60, sleep)
+
+    assert waits == [5, 10, 60, 5, 60]
+
+
+@pytest.mark.anyio
+async def test_poll_forever_logs_the_feed_name(caplog):
+    sleep, _ = fake_sleep(rounds=1)
+    refresh, _ = refresh_that(False)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="notibondi.worker"),
+        pytest.raises(Stop),
+    ):
+        await poll_forever("vehicle positions", refresh, lambda: 60, sleep)
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "vehicle positions refresh failed"
+    ]
+
+
 # refresh_forever
 
 
@@ -181,7 +302,7 @@ async def test_the_loop_logs_failures_and_keeps_going(settings, lines_by_stop, c
             )
 
     messages = [r.getMessage() for r in caplog.records]
-    assert "feed refresh failed" in messages
+    assert "trip updates refresh failed" in messages
     assert any(m.startswith("feed refreshed:") for m in messages)
 
 
