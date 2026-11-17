@@ -86,6 +86,27 @@ async def test_a_timeout_is_a_gcba_error(settings):
             await fetch_vehicle_positions(c, settings)
 
 
+@pytest.mark.parametrize(
+    ("fetch", "read_timeout"),
+    [(fetch_trip_updates, 35), (fetch_vehicle_positions, 30)],
+)
+@pytest.mark.anyio
+async def test_connects_fast_but_reads_slow(settings, fetch, read_timeout):
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        # any valid feed works: this test only looks at the request
+        return httpx2.Response(200, content=FEED.read_bytes())
+
+    async with client_with(handler) as c:
+        await fetch(c, settings)
+
+    timeout = seen[0].extensions["timeout"]
+    assert timeout["connect"] == 5
+    assert timeout["read"] == read_timeout
+
+
 @pytest.mark.anyio
 async def test_raises_gcba_error_on_500(settings):
     async with client_with(lambda req: httpx2.Response(500)) as c:

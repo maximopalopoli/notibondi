@@ -9,18 +9,22 @@ class GcbaError(Exception):
     """Any failure getting the feed: network, bad status or bad body."""
 
 
+# A healthy server connects in well under a second. When the GCBA was down
+# on 2026-11-16, each try waited 30 s to fail with ConnectTimeout; with a
+# short connect timeout it fails in 5 s and the backoff retries sooner.
+CONNECT_TIMEOUT = 5
 # A good download took ~29 s on 2026-11-16, so 30 s was too tight
-TRIP_UPDATES_TIMEOUT = 35
+TRIP_UPDATES_TIMEOUT = httpx2.Timeout(35, connect=CONNECT_TIMEOUT)
 # The full feed is ~1.5 MB. Five good downloads on 2026-11-16 took 1.5 to
 # 19 s, so 20 s would cut off good ones.
-VEHICLE_POSITIONS_TIMEOUT = 30
+VEHICLE_POSITIONS_TIMEOUT = httpx2.Timeout(30, connect=CONNECT_TIMEOUT)
 
 
 async def _fetch_feed(
     client: httpx2.AsyncClient,
     settings: Settings,
     path: str,
-    timeout: float,
+    timeout: httpx2.Timeout,
     params: dict[str, str] | None = None,
 ) -> gtfs_realtime_pb2.FeedMessage:
     all_params = {
