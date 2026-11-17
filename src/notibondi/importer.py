@@ -10,6 +10,20 @@ from pathlib import Path
 from sqlalchemy import Connection, text
 
 from notibondi.db import get_engine
+from notibondi.schedules import HOLIDAY_SERVICE
+
+
+def base_service(service_id: str) -> str:
+    """The service a dashed one belongs to: "1-35" -> "1".
+
+    Besides its 4 services (1 weekday, 2 Saturday, 3 holiday, 4 Sunday), the
+    2021 feed has ~17,900 dashed ones, each with a single trip and about the
+    same dates as the service before the dash. They are 4% of the trips, and
+    the app picks one service per day, so it would never show them. Their
+    exact dates don't matter: the calendar is from 2021 and the app only uses
+    it to tell the weekdays apart.
+    """
+    return service_id.split("-", 1)[0]
 
 
 def read_csv(zf: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
@@ -70,7 +84,7 @@ def load_trips(conn: Connection, zf: zipfile.ZipFile) -> None:
         {
             "trip_id": row["trip_id"],
             "route_id": row["route_id"],
-            "service_id": row["service_id"],
+            "service_id": base_service(row["service_id"]),
             "trip_headsign": row["trip_headsign"],
             "direction_id": int(row["direction_id"]),
             "shape_id": row["shape_id"],
@@ -132,13 +146,24 @@ def build_stop_routes(conn: Connection) -> None:
 
 
 def load_calendar_dates(conn: Connection, zf: zipfile.ZipFile) -> None:
+    # A set, because many dashed services repeat the dates of their base one
+    # (see base_service). If two rows still disagree on exception_type, the
+    # primary key fails the import.
+    unique = {
+        (
+            base_service(row["service_id"]),
+            row["date"],
+            int(row["exception_type"]),
+        )
+        for row in read_csv(zf, "calendar_dates.txt")
+    }
     rows = [
         {
-            "service_id": row["service_id"],
-            "service_date": datetime.strptime(row["date"], "%Y%m%d").date(),
-            "exception_type": int(row["exception_type"]),
+            "service_id": service_id,
+            "service_date": datetime.strptime(day, "%Y%m%d").date(),
+            "exception_type": exception_type,
         }
-        for row in read_csv(zf, "calendar_dates.txt")
+        for service_id, day, exception_type in unique
     ]
 
     conn.execute(
@@ -152,6 +177,40 @@ def load_calendar_dates(conn: Connection, zf: zipfile.ZipFile) -> None:
         """),
         rows,
     )
+
+
+def check_holiday_service(conn: Connection) -> None:
+    """Fail if HOLIDAY_SERVICE doesn't look like the holiday service.
+
+    The holiday service is hardcoded, and the GCBA renumbered the services
+    between the 2019 and the 2021 feeds. A holiday service runs a few scattered
+    days, so it must exist and must not be the most common service of any
+    weekday (the one service_for picks).
+    """
+    weekday_services = (
+        conn.execute(
+            text("""
+                SELECT DISTINCT ON (EXTRACT(DOW FROM service_date)) service_id
+                FROM calendar_dates
+                WHERE exception_type = 1
+                GROUP BY EXTRACT(DOW FROM service_date), service_id
+                ORDER BY EXTRACT(DOW FROM service_date), count(*) DESC, service_id
+            """)
+        )
+        .scalars()
+        .all()
+    )
+    exists = conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM calendar_dates WHERE service_id = :s)"),
+        {"s": HOLIDAY_SERVICE},
+    ).scalar()
+
+    if not exists or HOLIDAY_SERVICE in weekday_services:
+        raise ValueError(
+            f"service {HOLIDAY_SERVICE!r} doesn't look like the holiday service "
+            f"(the weekdays run {sorted(set(weekday_services))}): "
+            "check HOLIDAY_SERVICE in schedules.py against this GTFS"
+        )
 
 
 def load_shapes(conn: Connection, zf: zipfile.ZipFile) -> None:
@@ -218,6 +277,7 @@ def import_gtfs(conn: Connection, zip_path: Path) -> None:
         build_stop_routes(conn)
         build_route_stops(conn)
         load_calendar_dates(conn, zf)
+        check_holiday_service(conn)
         load_shapes(conn, zf)
 
     # The index is dropped before the COPY and built again here because

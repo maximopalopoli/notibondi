@@ -1,10 +1,13 @@
-.PHONY: up migrate import holidays dev lint test check fmt pilot
+.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot
 
 up:
 	docker compose up -d --wait db
 
 migrate:
 	uv run alembic upgrade head
+
+gtfs:
+	uv run python -m notibondi.download_gtfs data/gtfs.zip
 
 import:
 	uv run python -m notibondi.importer data/gtfs.zip

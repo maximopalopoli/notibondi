@@ -13,8 +13,10 @@ WINDOW_SECONDS = 90 * 60
 MAX_SERVICE_SECONDS = 30 * 3600
 MAX_ARRIVALS = 20
 
-# In the 2019 feed every holiday (12/10, 18/11, 8/12, 25/12) ran service 4
-HOLIDAY_SERVICE = "4"
+# In the 2021 feed (/colectivos/feed-gtfs) the holidays run service 3. The
+# 2019 one used 4, which in 2021 is Sunday: the importer checks this number
+# against the calendar (check_holiday_service).
+HOLIDAY_SERVICE = "3"
 
 BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -109,8 +111,8 @@ def service_for(conn: Connection, day: date) -> str | None:
 
     Holidays, loaded by hand into the holidays table, run HOLIDAY_SERVICE.
     Any other day gets the service most often used on its weekday in the
-    feed's calendar, which only covers late 2019, so the date itself is
-    never in it. None if no date in the calendar falls on that weekday.
+    feed's calendar, which only covers the first half of 2021, so the date
+    itself is never in it. None if no date in the calendar falls on that weekday.
     """
     is_holiday = conn.execute(
         text("SELECT EXISTS (SELECT 1 FROM holidays WHERE holiday_date = :day)"),

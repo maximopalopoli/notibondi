@@ -36,14 +36,10 @@ You need [uv](https://docs.astral.sh/uv/) and Docker.
 2. **Database.** `make up` starts Postgres + PostGIS and waits until it's
    ready. It also creates an empty `notibondi_test` database for the tests.
 3. **Schema.** `make migrate`.
-4. **GTFS data.** Download the static GTFS (~209 MB) to `data/gtfs.zip`:
-
-   ```sh
-   curl --create-dirs -o data/gtfs.zip https://cdn.buenosaires.gob.ar/datosabiertos/datasets/transporte-y-obras-publicas/colectivos-gtfs/colectivos-gtfs.zip
-   ```
-
-   Then run `make import` (about 3 minutes, ~29M `stop_times`) and
-   `make holidays` (loads `holidays.csv`).
+4. **GTFS data.** `make gtfs` downloads the static GTFS (~209 MB, about a
+   minute) from the GCBA API to `data/gtfs.zip`, with the credentials from
+   `.env`. Then run `make import` (about 3 minutes) and `make holidays`
+   (loads `holidays.csv`).
 5. **App.** `make dev` and open <http://localhost:8000>.
 
    Or run it in Docker instead: `docker compose up --build`, and open the same
@@ -55,6 +51,7 @@ Other commands:
 
 | Command | What it does |
 | --- | --- |
+| `make gtfs` | downloads the static GTFS again (the old zip is kept until the new one is complete) |
 | `make check` | lint + tests (the database must be up) |
 | `make fmt` | fixes lint and formats the code |
 | `make pilot` | records the live feed of one line to `data/pilot.sqlite` |
@@ -113,9 +110,14 @@ Every page uses the same query functions as the JSON API. The docs are at
 - **The midnight trap.** A trip belongs to the service day it started on, so
   after midnight the buses still running from yesterday have times like
   `24:30:00`. The arrivals query looks at both service days.
-- **Holidays.** The GTFS calendar only has dates from 2019, so the service of
-  each day (weekday, Saturday, Sunday or holiday) is worked out from the day
-  of the week plus `holidays.csv`.
+- **Holidays.** The GTFS calendar only has dates from the first half of 2021,
+  so the service of each day (weekday, Saturday, Sunday or holiday) is worked
+  out from the day of the week plus `holidays.csv`. The holiday service
+  number is fixed in the code, and the import fails if the calendar doesn't
+  agree with it.
+- **One service per day.** Besides its 4 services, the GTFS has ~17,900
+  "dashed" ones (`1-35`), each with a single trip. The import stores them as
+  the service before the dash, so they show up with the rest of the day.
 - **Precomputed tables.** The import builds `stop_routes` (the lines at each
   stop) and `route_stops` (the stops of each line and direction, using the
   trip with most stops). `route_stops` is 14 MB; the index it replaces would
@@ -125,16 +127,13 @@ Every page uses the same query functions as the JSON API. The docs are at
 
 ## Known limits
 
-- **Live data covers about 5% of the lines** (57 of 1052 on 2026-11-17), so
-  most arrivals are scheduled times and most line maps have no buses. The
-  live routes are matched to static lines by their stops, and the static
-  GTFS (2019) only knows 13% of the stops in today's feed. The GCBA API also
-  serves a newer static GTFS (`/colectivos/feed-gtfs`, from 2021) that knows
-  41% of them: switching to it is the next step.
-- **Some routes on the map are outdated.** They come from the 2019 GTFS, so a
-  line that changed its streets since then (108A around Chacarita, for
-  example) is drawn where it used to go.
+- **Live data covers about 32% of the lines** (340 of 1074 on 2026-11-17), so
+  most arrivals are still scheduled times. The live routes are matched to
+  static lines by their stops, and the static GTFS (2021) only knows 41% of
+  the stops in today's feed.
+- **Some routes on the map may be outdated.** They come from the 2021 GTFS,
+  so a line that changed its streets since then is drawn where it used to go.
 - **Buses without a trip are not shown.** About 29% of the positions feed has
   no `trip`, so there's no way to know their line.
-- About 228 stop names have `?` instead of `ñ`. That's how they come in the
+- About 222 stop names have `?` instead of `ñ`. That's how they come in the
   source data.

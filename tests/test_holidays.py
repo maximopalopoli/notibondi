@@ -47,35 +47,35 @@ def at(day: date, hour: int, minute: int = 0) -> datetime:
 
 
 def test_service_for_a_holiday_is_the_holiday_service(conn):
-    assert service_for(conn, TUESDAY) == "3"
+    assert service_for(conn, TUESDAY) == "1"
 
     add_holiday(conn, TUESDAY)
 
-    assert service_for(conn, TUESDAY) == HOLIDAY_SERVICE == "4"
+    assert service_for(conn, TUESDAY) == HOLIDAY_SERVICE == "3"
 
 
 def test_service_for_a_holiday_on_a_weekday_without_service(conn):
     # The fixture has no Wednesdays, but a holiday doesn't need the weekday
     add_holiday(conn, WEDNESDAY)
 
-    assert service_for(conn, WEDNESDAY) == "4"
+    assert service_for(conn, WEDNESDAY) == "3"
 
 
 def test_service_for_only_the_holiday_itself_changes(conn):
     add_holiday(conn, MONDAY)
 
-    assert service_for(conn, MONDAY) == "4"
-    assert service_for(conn, TUESDAY) == "3"
+    assert service_for(conn, MONDAY) == "3"
+    assert service_for(conn, TUESDAY) == "1"
     # Same weekday a week later is a regular Monday
-    assert service_for(conn, date(2026, 11, 16)) == "3"
+    assert service_for(conn, date(2026, 11, 16)) == "1"
 
 
 # next_arrivals
 
 
 def test_next_arrivals_on_a_holiday_uses_the_holiday_service(conn):
-    # Trip 1-1 (service 3) passes at 08:05 on a regular Tuesday; the fixture
-    # has no service 4 trips, so on a holiday nothing comes
+    # Trip 1-1 (service 1) passes at 08:05 on a regular Tuesday; the fixture
+    # has no service 3 trips, so on a holiday nothing comes
     assert next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8)) != []
 
     add_holiday(conn, TUESDAY)
@@ -84,8 +84,8 @@ def test_next_arrivals_on_a_holiday_uses_the_holiday_service(conn):
 
 
 def test_next_arrivals_after_midnight_uses_yesterdays_holiday_service(conn):
-    # Wednesday 00:30 normally shows Tuesday's 24:40:00 trip of service 3.
-    # If Tuesday was a holiday, yesterday's service is 4 and it's gone.
+    # Wednesday 00:30 normally shows Tuesday's 24:40:00 trip of service 1.
+    # If Tuesday was a holiday, yesterday's service is 3 and it's gone.
     assert [
         a.minutes for a in next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 0, 30))
     ] == [10]
@@ -133,7 +133,7 @@ def test_load_holidays_replaces_what_was_there(conn, tmp_path):
     load_holidays(conn, write_csv(tmp_path / "h.csv", "2026-12-25,Navidad"))
 
     assert holidays_in_db(conn) == [(date(2026, 12, 25), "Navidad")]
-    assert service_for(conn, TUESDAY) == "3"
+    assert service_for(conn, TUESDAY) == "1"
 
 
 def test_load_holidays_with_an_empty_csv_clears_the_table(conn, tmp_path):

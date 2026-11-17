@@ -1,9 +1,14 @@
+import csv
+import shutil
 from datetime import date
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 
 from notibondi.importer import import_gtfs
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "gtfs-mini"
 
 
 def test_import_loads_all_stops(db_engine, gtfs_zip):
@@ -142,11 +147,12 @@ def test_import_stores_service_and_headsign_of_trips(db_engine, gtfs_zip):
         ).all()
 
         assert [tuple(t) for t in trips] == [
-            ("1-1", "3", "a Olivos"),
-            ("2-1", "1", "a Olivos"),
-            ("3-1", "3", "a Merlo"),
-            ("4-1", "3", "a Merlo"),
-            ("5-1", "3", "a Merlo"),
+            ("1-1", "1", "a Olivos"),
+            ("2-1", "2", "a Olivos"),
+            # Service "1-35" in the zip, stored as its base service
+            ("3-1", "1", "a Merlo"),
+            ("4-1", "1", "a Merlo"),
+            ("5-1", "1", "a Merlo"),
             ("6-1", "9", "a La Boca"),
             ("7-1", "9", "a Olivos"),
         ]
@@ -230,7 +236,7 @@ def test_import_parses_calendar_dates_as_dates(db_engine, gtfs_zip):
             text("""
                 SELECT service_date, exception_type
                 FROM calendar_dates
-                WHERE service_id = '1'
+                WHERE service_id = '2'
                 ORDER BY service_date DESC
                 LIMIT 1
             """)
@@ -424,4 +430,45 @@ def test_import_twice_does_not_duplicate_route_stops(db_engine, gtfs_zip):
         count = conn.execute(text("SELECT count(*) FROM route_stops")).scalar()
 
         assert count == 8
+        conn.rollback()
+
+
+def test_import_merges_dashed_services_into_their_base_one(db_engine, gtfs_zip):
+    # "1-35" repeats two dates of "1": stored as "1", and only once each
+    with db_engine.connect() as conn:
+        import_gtfs(conn, gtfs_zip)
+
+        services = (
+            conn.execute(
+                text("SELECT DISTINCT service_id FROM calendar_dates ORDER BY 1")
+            )
+            .scalars()
+            .all()
+        )
+
+        assert services == ["1", "2", "3", "4"]
+        conn.rollback()
+
+
+def test_import_fails_if_the_holiday_service_runs_a_weekday(db_engine, tmp_path):
+    # The 2019 numbering: service 3 was the weekday one, so HOLIDAY_SERVICE
+    # ("3") would give holidays the weekday schedule
+    to_2019 = {"1": "3", "2": "1", "3": "4", "4": "2"}
+    src = tmp_path / "gtfs"
+    shutil.copytree(FIXTURE_DIR, src)
+    calendar = src / "calendar_dates.txt"
+    with calendar.open() as f:
+        rows = list(csv.DictReader(f))
+    with calendar.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for row in rows:
+            # The dashed "1-35" would become "3-35"
+            base, dash, rest = row["service_id"].partition("-")
+            writer.writerow({**row, "service_id": to_2019[base] + dash + rest})
+    zip_path = shutil.make_archive(str(tmp_path / "old"), "zip", src)
+
+    with db_engine.connect() as conn:
+        with pytest.raises(ValueError, match="holiday service"):
+            import_gtfs(conn, zip_path)
         conn.rollback()

@@ -137,8 +137,8 @@ def test_next_arrivals_drops_yesterdays_trip_once_it_passed(conn):
 
 
 def test_next_arrivals_after_midnight_uses_yesterdays_own_service(conn):
-    # Sunday 00:30: yesterday was Saturday (service 1), so Tuesday's 24:40
-    # trip of service 3 must not show up
+    # Sunday 00:30: yesterday was Saturday (service 2), so Tuesday's 24:40
+    # trip of service 1 must not show up
     assert next_arrivals(conn, PLAZA_ITALIA, at(SUNDAY, 0, 30)) == []
 
 
