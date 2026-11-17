@@ -17,5 +17,20 @@ services:
       timeout: 5s
       retries: 15
 
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # Inside compose, Postgres is "db", not localhost (that's the app itself).
+      # .env keeps localhost for `make dev`.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Containers run in UTC; this makes the log timestamps local time
+      TZ: America/Argentina/Buenos_Aires
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata: {}

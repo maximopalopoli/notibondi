@@ -1,0 +1,19 @@
+# Secrets never go into the image: they come as environment variables.
+.env
+
+# ~210 MB of GTFS and feed samples. The import runs from the host.
+data/
+
+# Built inside the image, for Linux; the local one is useless there.
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Not needed to run the app.
+.git/
+archivo/
+tests/
+pilot/
+scripts/
+ROADMAP.md
