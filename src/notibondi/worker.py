@@ -63,7 +63,8 @@ class LiveFeed:
     vehicles: dict[str, list[Vehicle]] = field(default_factory=dict)
     vehicles_at: float | None = None  # time.monotonic() of the last good positions
     lines: dict[str, str] = field(default_factory=dict)
-    # Every name seen since startup, by live route_id (see fetch_route_names)
+    # Every name seen, by live route_id (see fetch_route_names). It starts
+    # with the saved ones, so it doesn't wait for the first download.
     route_names: dict[str, str] = field(default_factory=dict)
 
 
@@ -164,13 +165,18 @@ async def refresh_route_names_forever(
     live: LiveFeed,
     client: AsyncClient,
     settings: Settings,
+    save: Callable[[dict[str, str]], None],
 ):
+    """save gets each download, in a thread: it's a DB write."""
+
     async def refresh():
         names = await fetch_route_names(client, settings)
         # Added to the old ones, not replacing them: the feed only has the
         # route_ids with a bus right now. The next arrivals refresh uses them.
         live.route_names = {**live.route_names, **names}
         log.info("route names refreshed: %d known", len(live.route_names))
+        # After updating live: if the DB fails, the names still get used
+        await asyncio.to_thread(save, names)
 
     await poll_forever("route names", refresh, lambda: ROUTE_NAMES_SECONDS)
 

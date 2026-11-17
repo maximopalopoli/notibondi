@@ -489,11 +489,12 @@ def no_waiting_for_names(monkeypatch):
 @pytest.mark.anyio
 async def test_a_good_download_fills_the_route_names(settings, no_waiting_for_names):
     live = LiveFeed()
+    saved = []
     client, _ = names_client([{"route_id": "834", "route_short_name": "152"}])
 
     async with client:
         await run_until(
-            refresh_route_names_forever(live, client, settings),
+            refresh_route_names_forever(live, client, settings, saved.append),
             lambda: live.route_names,
         )
 
@@ -504,6 +505,7 @@ async def test_a_good_download_fills_the_route_names(settings, no_waiting_for_na
 async def test_route_names_add_up_between_downloads(settings, no_waiting_for_names):
     # 834 has no bus in the second download, but keeps its name
     live = LiveFeed()
+    saved = []
     client, calls = names_client(
         [{"route_id": "834", "route_short_name": "152"}],
         [{"route_id": "1553", "route_short_name": "228B"}],
@@ -511,11 +513,48 @@ async def test_route_names_add_up_between_downloads(settings, no_waiting_for_nam
 
     async with client:
         await run_until(
-            refresh_route_names_forever(live, client, settings),
+            refresh_route_names_forever(live, client, settings, saved.append),
             lambda: len(calls) >= 3,
         )
 
     assert live.route_names == {"834": "152", "1553": "228B"}
+    # Each download is saved as it came: the DB adds them up on its own
+    assert saved == [{"834": "152"}, {"1553": "228B"}]
+
+
+@pytest.mark.anyio
+async def test_route_names_start_with_the_saved_ones(settings, no_waiting_for_names):
+    live = LiveFeed(route_names={"834": "152", "1553": "228A"})
+    saved = []
+    client, _ = names_client([{"route_id": "1553", "route_short_name": "228B"}])
+
+    async with client:
+        await run_until(
+            refresh_route_names_forever(live, client, settings, saved.append),
+            lambda: saved,
+        )
+
+    assert live.route_names == {"834": "152", "1553": "228B"}
+
+
+@pytest.mark.anyio
+async def test_a_failed_save_keeps_the_names(settings, no_waiting_for_names):
+    live = LiveFeed()
+    tries = []
+
+    def broken_save(names):
+        tries.append(names)
+        raise OSError("database is down")
+
+    client, _ = names_client([{"route_id": "834", "route_short_name": "152"}])
+
+    async with client:
+        await run_until(
+            refresh_route_names_forever(live, client, settings, broken_save),
+            lambda: tries,
+        )
+
+    assert live.route_names == {"834": "152"}
 
 
 @pytest.mark.anyio

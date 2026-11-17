@@ -16,7 +16,12 @@ from sqlalchemy import Connection
 
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
-from notibondi.realtime import load_lines_by_stop, merge_arrivals
+from notibondi.realtime import (
+    load_lines_by_stop,
+    load_route_names,
+    merge_arrivals,
+    save_route_names,
+)
 from notibondi.routes import (
     Route,
     get_route,
@@ -51,11 +56,17 @@ logging.basicConfig(
 logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
+def save_names(names: dict[str, str]) -> None:
+    with get_engine().begin() as conn:
+        save_route_names(conn, names)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     with get_engine().connect() as conn:
         lines_by_stop = load_lines_by_stop(conn)
-    app.state.live = LiveFeed()
+        route_names = load_route_names(conn)
+    app.state.live = LiveFeed(route_names=route_names)
     async with httpx2.AsyncClient(timeout=30) as client:
         settings = get_settings()
         # Separate tasks, so a slow download never delays the others
@@ -67,7 +78,9 @@ async def lifespan(app: FastAPI):
                 refresh_vehicles_forever(app.state.live, client, settings)
             ),
             asyncio.create_task(
-                refresh_route_names_forever(app.state.live, client, settings)
+                refresh_route_names_forever(
+                    app.state.live, client, settings, save_names
+                )
             ),
         ]
         yield

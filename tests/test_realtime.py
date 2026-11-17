@@ -13,8 +13,10 @@ from notibondi.realtime import (
     collect_stops_by_route,
     group_vehicles,
     load_lines_by_stop,
+    load_route_names,
     merge_arrivals,
     resolve_lines,
+    save_route_names,
     spellings,
 )
 from notibondi.schedules import (
@@ -37,6 +39,35 @@ def load_feed(name: str) -> gtfs_realtime_pb2.FeedMessage:
 def feed_205():
     # Line 108 towards Liniers, saved on 2026-11-12 at 11:06:30.
     return load_feed("trip_updates_205.pb")
+
+
+# load_route_names and save_route_names
+
+
+def test_saved_route_names_load_back(conn):
+    save_route_names(conn, {"834": "152", "1553": "228B"})
+
+    assert load_route_names(conn) == {"834": "152", "1553": "228B"}
+
+
+def test_saving_route_names_adds_to_and_updates_the_old_ones(conn):
+    save_route_names(conn, {"834": "152", "1553": "228A"})
+
+    save_route_names(conn, {"1553": "228B"})
+
+    assert load_route_names(conn) == {"834": "152", "1553": "228B"}
+
+
+def test_saving_no_route_names_changes_nothing(conn):
+    save_route_names(conn, {"834": "152"})
+
+    save_route_names(conn, {})
+
+    assert load_route_names(conn) == {"834": "152"}
+
+
+def test_load_route_names_with_none_saved(conn):
+    assert load_route_names(conn) == {}
 
 
 # load_lines_by_stop

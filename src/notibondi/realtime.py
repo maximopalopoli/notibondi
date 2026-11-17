@@ -232,6 +232,31 @@ def load_lines_by_stop(conn: Connection) -> dict[str, set[str]]:
     return dict(lines_by_stop)
 
 
+def load_route_names(conn: Connection) -> dict[str, str]:
+    """The names saved by earlier downloads, so a restart doesn't lose them."""
+    rows = conn.execute(text("SELECT route_id, name FROM route_names"))
+    return {route_id: name for route_id, name in rows}
+
+
+def save_route_names(conn: Connection, names: dict[str, str]) -> None:
+    """Add or update the names of one download. Other route_ids keep theirs.
+
+    seen_at is the last download that had the route_id, to tell old names
+    from current ones.
+    """
+    if not names:
+        return
+    conn.execute(
+        text("""
+            INSERT INTO route_names (route_id, name, seen_at)
+            VALUES (:route_id, :name, now())
+            ON CONFLICT (route_id) DO UPDATE
+            SET name = EXCLUDED.name, seen_at = EXCLUDED.seen_at
+        """),
+        [{"route_id": r, "name": n} for r, n in names.items()],
+    )
+
+
 def merge_arrivals(
     live: list[LiveArrival],
     scheduled: list[Arrival],

@@ -111,8 +111,9 @@ Every page uses the same query functions as the JSON API. The docs are at
   `85 A - P. Alsina` or `247-5` are read as `85A` and `247R5`), and otherwise
   from the stops it shares with the static lines, since stop IDs do match.
   Live and scheduled arrivals are then merged per stop, by line name. The
-  names are downloaded every 10 minutes and kept, because that feed is slow
-  and only lists the routes with a bus right now.
+  names are downloaded every 10 minutes and saved in `route_names`, because
+  that feed is slow and only lists the routes with a bus right now. After a
+  restart the app starts with the saved ones, instead of waiting for buses.
 - **The midnight trap.** A trip belongs to the service day it started on, so
   after midnight the buses still running from yesterday have times like
   `24:30:00`. The arrivals query looks at both service days.
