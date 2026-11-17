@@ -10,7 +10,12 @@ from httpx2 import AsyncClient
 from pydantic import BaseModel
 
 from notibondi.config import Settings
-from notibondi.gcba import GcbaError, fetch_trip_updates, fetch_vehicle_positions
+from notibondi.gcba import (
+    GcbaError,
+    fetch_route_names,
+    fetch_trip_updates,
+    fetch_vehicle_positions,
+)
 from notibondi.realtime import LiveArrival, Vehicle, build_index, group_vehicles
 from notibondi.schedules import now
 
@@ -21,6 +26,9 @@ PEAK_HOURS = [(7, 10), (17, 20)]
 
 # The positions change once a minute, at rush hour too (measured 2026-11-16)
 VEHICLES_SECONDS = 60
+
+# A route_id keeps its name, and that feed is slow (~23 s)
+ROUTE_NAMES_SECONDS = 10 * 60
 
 # After a failed download, retry after 5 s, then 10, 20, 40… (see retry_seconds)
 FIRST_RETRY_SECONDS = 5
@@ -55,6 +63,8 @@ class LiveFeed:
     vehicles: dict[str, list[Vehicle]] = field(default_factory=dict)
     vehicles_at: float | None = None  # time.monotonic() of the last good positions
     lines: dict[str, str] = field(default_factory=dict)
+    # Every name seen since startup, by live route_id (see fetch_route_names)
+    route_names: dict[str, str] = field(default_factory=dict)
 
 
 MAX_VEHICLE_AGE_SECONDS = 60 * 5
@@ -122,7 +132,9 @@ async def refresh_forever(
 ):
     async def refresh():
         feed = await fetch_trip_updates(client, settings)
-        index, lines = await asyncio.to_thread(build_index, feed, lines_by_stop)
+        index, lines = await asyncio.to_thread(
+            build_index, feed, lines_by_stop, live.route_names
+        )
         # Only reached if both lines above worked. Replacing the whole index
         # in one step means readers see the old one or the new one, no lock.
         live.index = index
@@ -146,6 +158,21 @@ async def refresh_vehicles_forever(
         log.info("vehicles refreshed: %d routes", len(vehicles))
 
     await poll_forever("vehicle positions", refresh, lambda: VEHICLES_SECONDS)
+
+
+async def refresh_route_names_forever(
+    live: LiveFeed,
+    client: AsyncClient,
+    settings: Settings,
+):
+    async def refresh():
+        names = await fetch_route_names(client, settings)
+        # Added to the old ones, not replacing them: the feed only has the
+        # route_ids with a bus right now. The next arrivals refresh uses them.
+        live.route_names = {**live.route_names, **names}
+        log.info("route names refreshed: %d known", len(live.route_names))
+
+    await poll_forever("route names", refresh, lambda: ROUTE_NAMES_SECONDS)
 
 
 class Health(BaseModel):

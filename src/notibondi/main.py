@@ -39,6 +39,7 @@ from notibondi.worker import (
     LiveFeed,
     feed_health,
     refresh_forever,
+    refresh_route_names_forever,
     refresh_vehicles_forever,
     vehicles_geojson,
 )
@@ -57,13 +58,16 @@ async def lifespan(app: FastAPI):
     app.state.live = LiveFeed()
     async with httpx2.AsyncClient(timeout=30) as client:
         settings = get_settings()
-        # Two tasks, so a slow positions download never delays the arrivals
+        # Separate tasks, so a slow download never delays the others
         tasks = [
             asyncio.create_task(
                 refresh_forever(app.state.live, client, settings, lines_by_stop)
             ),
             asyncio.create_task(
                 refresh_vehicles_forever(app.state.live, client, settings)
+            ),
+            asyncio.create_task(
+                refresh_route_names_forever(app.state.live, client, settings)
             ),
         ]
         yield

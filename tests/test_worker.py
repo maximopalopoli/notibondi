@@ -19,6 +19,7 @@ from notibondi.worker import (
     LiveFeed,
     poll_forever,
     refresh_forever,
+    refresh_route_names_forever,
     refresh_seconds,
     refresh_vehicles_forever,
     retry_seconds,
@@ -461,6 +462,76 @@ async def test_cancel_stops_the_vehicles_loop(settings, no_waiting_for_vehicles)
         )
 
     assert task.cancelled()
+
+
+# refresh_route_names_forever
+
+
+def names_client(*batches: list[dict]):
+    """A fake vehiclePositionsSimple that sends each batch of buses in order."""
+    calls = []
+
+    def handler(request):
+        if len(calls) >= len(batches):
+            calls.append(500)
+            return httpx2.Response(500)
+        calls.append(200)
+        return httpx2.Response(200, json=batches[len(calls) - 1])
+
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler)), calls
+
+
+@pytest.fixture
+def no_waiting_for_names(monkeypatch):
+    monkeypatch.setattr(worker, "ROUTE_NAMES_SECONDS", 0)
+
+
+@pytest.mark.anyio
+async def test_a_good_download_fills_the_route_names(settings, no_waiting_for_names):
+    live = LiveFeed()
+    client, _ = names_client([{"route_id": "834", "route_short_name": "152"}])
+
+    async with client:
+        await run_until(
+            refresh_route_names_forever(live, client, settings),
+            lambda: live.route_names,
+        )
+
+    assert live.route_names == {"834": "152"}
+
+
+@pytest.mark.anyio
+async def test_route_names_add_up_between_downloads(settings, no_waiting_for_names):
+    # 834 has no bus in the second download, but keeps its name
+    live = LiveFeed()
+    client, calls = names_client(
+        [{"route_id": "834", "route_short_name": "152"}],
+        [{"route_id": "1553", "route_short_name": "228B"}],
+    )
+
+    async with client:
+        await run_until(
+            refresh_route_names_forever(live, client, settings),
+            lambda: len(calls) >= 3,
+        )
+
+    assert live.route_names == {"834": "152", "1553": "228B"}
+
+
+@pytest.mark.anyio
+async def test_the_arrivals_refresh_uses_the_route_names(settings, lines_by_stop):
+    # Route 205 resolves to 108A by its stops; its name says otherwise
+    live = LiveFeed(route_names={"205": "108B"})
+    lines_by_stop = {**lines_by_stop, "X": {"108B"}}
+    client, _ = responses(200)
+
+    async with client:
+        await run_until(
+            refresh_forever(live, client, settings, lines_by_stop),
+            lambda: live.fetched_at is not None,
+        )
+
+    assert live.lines == {"205": "108B"}
 
 
 # vehicles_geojson

@@ -7,8 +7,9 @@ from sqlalchemy import Connection, text
 
 from notibondi.schedules import MAX_ARRIVALS, WINDOW_SECONDS, Arrival
 
-# A live route_id is a static line only if that line goes through at least
-# this share of the route's stops in the feed, and no other line ties with it.
+# Without a name, a live route_id is a static line only if that line goes
+# through at least this share of the route's stops in the feed, and no other
+# line ties with it.
 MIN_SHARE = 0.5
 
 # The feed sometimes reports a delay of ~84,500 s around midnight (a bug,
@@ -38,10 +39,11 @@ class LiveArrival:
 def build_index(
     feed: gtfs_realtime_pb2.FeedMessage,
     lines_by_stop: dict[str, set[str]],
+    names: dict[str, str] | None = None,
 ) -> tuple[dict[str, list[LiveArrival]], dict[str, str]]:
     """Map each stop_id to its live arrivals, sorted by time."""
 
-    lines = resolve_lines(collect_stops_by_route(feed), lines_by_stop)
+    lines = resolve_lines(collect_stops_by_route(feed), lines_by_stop, names)
     index: dict[str, list[LiveArrival]] = defaultdict(list)
 
     for entity in feed.entity:
@@ -107,28 +109,87 @@ def collect_stops_by_route(
     return dict(result)
 
 
+def branches_by_name(lines: set[str]) -> dict[str, set[str]]:
+    """What a name without the branch letter can mean: {"152": {"152A", "152B"}}."""
+    result: dict[str, set[str]] = defaultdict(set)
+    for line in lines:
+        for i in range(1, len(line)):
+            if line[i].isalpha():
+                result[line[:i]].add(line)
+    return result
+
+
+def _clear_winner(votes: Counter) -> tuple[str, int] | None:
+    top = votes.most_common(2)
+    if not top or (len(top) > 1 and top[0][1] == top[1][1]):
+        return None
+    return top[0]
+
+
+def _line_by_name(
+    name: str,
+    stops: set[str],
+    lines_by_stop: dict[str, set[str]],
+    static_lines: set[str],
+    branches: dict[str, set[str]],
+) -> str | None:
+    if name in static_lines:
+        return name
+    # The feed often names the line and not the branch ("152"): if it has
+    # more than one, the stops choose
+    candidates = branches.get(name, set())
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    votes = Counter(
+        line
+        for stop_id in stops
+        for line in lines_by_stop.get(stop_id, set())
+        if line in candidates
+    )
+    winner = _clear_winner(votes)
+    return winner[0] if winner else None
+
+
+def _line_by_stops(stops: set[str], lines_by_stop: dict[str, set[str]]) -> str | None:
+    votes = Counter()
+    for stop_id in stops:
+        votes.update(lines_by_stop.get(stop_id, set()))
+    winner = _clear_winner(votes)
+    if winner and winner[1] >= MIN_SHARE * len(stops):
+        return winner[0]
+    return None
+
+
 def resolve_lines(
     stops_by_route: dict[str, set[str]],
     lines_by_stop: dict[str, set[str]],
+    names: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Find the static line of each live route_id by the stops they share.
+    """Find the static line of each live route_id.
 
-    Live and static route_ids don't match, but stop_ids do. A route_id
-    without a clear winner is left out instead of guessed.
+    Live and static route_ids don't match. The name the GCBA gives the
+    route_id comes first (see fetch_route_names); without a usable one, the
+    line is the one that shares most stops with it, since stop_ids do match.
+    A route_id without a clear winner is left out instead of guessed.
+
+    A route_id with a name and no arrivals still gets its line: its buses
+    show up on the map.
     """
+    names = names or {}
+    static_lines = {line for lines in lines_by_stop.values() for line in lines}
+    branches = branches_by_name(static_lines)
+
     result = {}
-    for route_id, stops in stops_by_route.items():
-        votes = Counter()
-        for stop_id in stops:
-            votes.update(lines_by_stop.get(stop_id, set()))
-
-        top = votes.most_common(2)
-        if not top:
-            continue
-        line, line_votes = top[0]
-        runner_up_votes = top[1][1] if len(top) > 1 else 0
-
-        if line_votes >= MIN_SHARE * len(stops) and line_votes > runner_up_votes:
+    for route_id in stops_by_route.keys() | names.keys():
+        stops = stops_by_route.get(route_id, set())
+        line = None
+        if route_id in names:
+            line = _line_by_name(
+                names[route_id], stops, lines_by_stop, static_lines, branches
+            )
+        if line is None:
+            line = _line_by_stops(stops, lines_by_stop)
+        if line is not None:
             result[route_id] = line
     return result
 

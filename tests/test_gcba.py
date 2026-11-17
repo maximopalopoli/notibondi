@@ -4,7 +4,12 @@ import httpx2
 import pytest
 
 from notibondi.config import Settings
-from notibondi.gcba import GcbaError, fetch_trip_updates, fetch_vehicle_positions
+from notibondi.gcba import (
+    GcbaError,
+    fetch_route_names,
+    fetch_trip_updates,
+    fetch_vehicle_positions,
+)
 
 FEED = Path(__file__).parent / "fixtures" / "trip_updates_205.pb"
 
@@ -139,3 +144,77 @@ async def test_error_messages_never_include_the_secret(settings):
             await fetch_trip_updates(c, settings)
 
     assert "the-secret" not in str(exc.value)
+
+
+# fetch_route_names
+
+# Two buses as they come in vehiclePositionsSimple (2026-11-17), fewer fields
+SIMPLE_BUSES = [
+    {"route_id": "835", "route_short_name": "152", "id": "1937", "direction": 1},
+    {"route_id": "1553", "route_short_name": "228B", "id": "2164", "direction": 0},
+]
+
+
+@pytest.mark.anyio
+async def test_route_names_maps_each_route_id_to_its_name(settings):
+    async with client_with(lambda req: httpx2.Response(200, json=SIMPLE_BUSES)) as c:
+        names = await fetch_route_names(c, settings)
+
+    assert names == {"835": "152", "1553": "228B"}
+
+
+@pytest.mark.anyio
+async def test_route_names_uses_the_simple_feed_with_a_long_read(settings):
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        return httpx2.Response(200, json=SIMPLE_BUSES)
+
+    async with client_with(handler) as c:
+        await fetch_route_names(c, settings)
+
+    url = seen[0].url
+    assert url.path == "/colectivos/vehiclePositionsSimple"
+    assert url.params["client_secret"] == "the-secret"
+    assert seen[0].extensions["timeout"]["connect"] == 5
+    assert seen[0].extensions["timeout"]["read"] == 60
+
+
+@pytest.mark.anyio
+async def test_route_names_skips_buses_without_a_route_or_a_name(settings):
+    buses = [
+        *SIMPLE_BUSES,
+        {"route_id": "", "route_short_name": "60"},
+        {"route_id": "999", "route_short_name": None},
+        {"id": "1"},
+    ]
+    async with client_with(lambda req: httpx2.Response(200, json=buses)) as c:
+        names = await fetch_route_names(c, settings)
+
+    assert names == {"835": "152", "1553": "228B"}
+
+
+@pytest.mark.anyio
+async def test_route_names_reads_a_numeric_route_id_as_text(settings):
+    buses = [{"route_id": 835, "route_short_name": "152"}]
+    async with client_with(lambda req: httpx2.Response(200, json=buses)) as c:
+        assert await fetch_route_names(c, settings) == {"835": "152"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>Service Unavailable</html>", b'{"error": "x"}', b"[1, 2]"],
+)
+@pytest.mark.anyio
+async def test_route_names_raises_gcba_error_on_a_bad_body(settings, body):
+    async with client_with(lambda req: httpx2.Response(200, content=body)) as c:
+        with pytest.raises(GcbaError, match="JSON"):
+            await fetch_route_names(c, settings)
+
+
+@pytest.mark.anyio
+async def test_route_names_raises_gcba_error_on_500(settings):
+    async with client_with(lambda req: httpx2.Response(500)) as c:
+        with pytest.raises(GcbaError, match="500"):
+            await fetch_route_names(c, settings)

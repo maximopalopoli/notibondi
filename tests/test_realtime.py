@@ -8,6 +8,7 @@ from notibondi.realtime import (
     MAX_DELAY_SECONDS,
     LiveArrival,
     Vehicle,
+    branches_by_name,
     build_index,
     collect_stops_by_route,
     group_vehicles,
@@ -125,6 +126,72 @@ def test_resolve_lines_resolves_each_route_on_its_own():
     assert result == {"205": "108A"}
 
 
+# resolve_lines with names
+
+BRANCHES = {"A": {"152A", "152B"}, "B": {"152A"}, "C": {"152B"}, "D": {"60"}}
+
+
+def test_resolve_lines_takes_an_exact_name_over_the_stops():
+    # The stops say 60, but the GCBA calls it 152B
+    names = {"834": "152B"}
+
+    assert resolve_lines({"834": {"D"}}, BRANCHES, names) == {"834": "152B"}
+
+
+def test_resolve_lines_with_a_name_needs_no_stops():
+    # A route_id with buses but no arrivals: only the map needs its line
+    assert resolve_lines({}, BRANCHES, {"834": "60"}) == {"834": "60"}
+
+
+def test_resolve_lines_takes_the_only_branch_of_a_name():
+    lines_by_stop = {"A": {"60A"}, "B": {"152A"}}
+
+    assert resolve_lines({}, lines_by_stop, {"834": "60"}) == {"834": "60A"}
+
+
+def test_resolve_lines_picks_the_branch_by_the_stops():
+    # A is both branches, B only 152A: 2 votes to 1
+    result = resolve_lines({"834": {"A", "B"}}, BRANCHES, {"834": "152"})
+
+    assert result == {"834": "152A"}
+
+
+def test_resolve_lines_only_counts_stops_of_the_named_line():
+    # D (line 60) would win by stops alone, but the name says 152
+    lines_by_stop = {**BRANCHES, "E": {"60"}, "F": {"60"}}
+
+    result = resolve_lines({"834": {"B", "D", "E", "F"}}, lines_by_stop, {"834": "152"})
+
+    assert result == {"834": "152A"}
+
+
+def test_resolve_lines_leaves_out_a_branch_tie():
+    # A is both branches: no way to tell, and the stops alone tie too
+    assert resolve_lines({"834": {"A"}}, BRANCHES, {"834": "152"}) == {}
+
+
+def test_resolve_lines_falls_back_to_the_stops_for_an_unknown_name():
+    lines_by_stop = {"A": {"108A"}, "B": {"108A"}}
+
+    result = resolve_lines({"205": {"A", "B"}}, lines_by_stop, {"205": "108 x Ch"})
+
+    assert result == {"205": "108A"}
+
+
+def test_resolve_lines_does_not_take_a_longer_number_as_a_branch():
+    # "15" is not a branch of 152A
+    assert resolve_lines({}, {"A": {"152A"}}, {"834": "15"}) == {}
+
+
+def test_branches_by_name():
+    branches = branches_by_name({"152A", "152B", "505R3", "60"})
+
+    assert branches["152"] == {"152A", "152B"}
+    assert branches["505"] == {"505R3"}
+    assert "15" not in branches
+    assert "60" not in branches
+
+
 # build_index
 
 
@@ -239,6 +306,15 @@ def test_build_index_skips_routes_without_a_resolved_line():
 
 def test_build_index_of_an_empty_feed_is_empty():
     assert build_index(make_feed(), {"A": {"60"}}) == ({}, {})
+
+
+def test_build_index_uses_the_names():
+    feed = make_feed(("834", "t1", [("A", 1_000, 0)]))
+
+    index, lines = build_index(feed, BRANCHES, {"834": "152B"})
+
+    assert lines == {"834": "152B"}
+    assert [a.line for a in index["A"]] == ["152B"]
 
 
 def test_build_index_also_returns_the_resolved_lines(feed_205):

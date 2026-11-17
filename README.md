@@ -90,7 +90,7 @@ Every page uses the same query functions as the JSON API. The docs are at
   The two decisions go together: uvicorn runs with a single worker, because
   each worker would start its own background tasks, hit the GCBA again and
   keep its own copy of the data.
-- **Background tasks, not per-request calls.** Two asyncio tasks download the
+- **Background tasks, not per-request calls.** Asyncio tasks download the
   city feeds, no matter how many users there are: arrivals (`tripUpdates`)
   every 30 s at rush hour and every 60 s the rest of the day, and bus
   positions (the whole `vehiclePositions` feed) every 60 s. The data only
@@ -105,8 +105,13 @@ Every page uses the same query functions as the JSON API. The docs are at
   download still gets 30-45 s.
 - **Live and scheduled, mixed by line name.** The real-time `route_id` and
   `trip_id` don't match the static GTFS. Worse, they collide with IDs that
-  exist there, so a direct join silently gives the wrong line. Stop IDs do
-  match, so live and scheduled arrivals are merged per stop, by line name.
+  exist there, so a direct join silently gives the wrong line. So each live
+  `route_id` gets its line name first from `vehiclePositionsSimple`, a JSON
+  feed that names it (`152`, and the stops pick the branch), and otherwise
+  from the stops it shares with the static lines, since stop IDs do match.
+  Live and scheduled arrivals are then merged per stop, by line name. The
+  names are downloaded every 10 minutes and kept, because that feed is slow
+  and only lists the routes with a bus right now.
 - **The midnight trap.** A trip belongs to the service day it started on, so
   after midnight the buses still running from yesterday have times like
   `24:30:00`. The arrivals query looks at both service days.
@@ -127,10 +132,11 @@ Every page uses the same query functions as the JSON API. The docs are at
 
 ## Known limits
 
-- **Live data covers about 32% of the lines** (340 of 1074 on 2026-11-17), so
-  most arrivals are still scheduled times. The live routes are matched to
-  static lines by their stops, and the static GTFS (2021) only knows 41% of
-  the stops in today's feed.
+- **Live data covers about half of the lines** (528 of 1072 on 2026-11-17).
+  The rest have names that don't match the GTFS (`159 L roja`, `247-5`),
+  branches that can't be told apart (152), or no bus in the names feed yet.
+  Arrivals also need the stop: the static GTFS (2021) only knows 41% of the
+  stops in today's feed.
 - **Some routes on the map may be outdated.** They come from the 2021 GTFS,
   so a line that changed its streets since then is drawn where it used to go.
 - **Buses without a trip are not shown.** About 29% of the positions feed has
