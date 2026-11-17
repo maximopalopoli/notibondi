@@ -84,6 +84,7 @@ map.on("load", async () => {
     id: "stops",
     type: "circle",
     source: "route",
+    minzoom: 13,
     filter: ["==", ["geometry-type"], "Point"],
     paint: {
       "circle-radius": 4,
