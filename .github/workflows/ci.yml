@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgis/postgis:17-3.5
+        # No POSTGRES_DB: the image would create PostGIS in it, and the first
+        # migration creates it too. notibondi_test is created below instead.
+        env:
+          POSTGRES_USER: notibondi
+          POSTGRES_PASSWORD: notibondi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U notibondi"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      # conftest swaps the database for notibondi_test
+      DATABASE_URL: postgresql+psycopg://notibondi:notibondi@localhost:5432/postgres
+      # The tests never call the GCBA, so no real secrets are needed
+      GCBA_CLIENT_ID: unused
+      GCBA_CLIENT_SECRET: unused
+      # Fail if uv.lock doesn't match pyproject.toml
+      UV_LOCKED: 1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.23"
+          enable-cache: true
+
+      - name: Create the test database
+        run: psql -h localhost -U notibondi -d postgres -c "CREATE DATABASE notibondi_test"
+        env:
+          PGPASSWORD: notibondi
+
+      - run: make check
