@@ -1,6 +1,6 @@
 # Stage 1: install the dependencies and the app into .venv with uv.
 # Dependencies go first, so code changes don't reinstall them.
-FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN uv sync --locked --no-dev --no-editable
 
 
 # Stage 2: a clean Python image with only .venv, run by a non-root user.
-FROM python:3.14-slim
+FROM python:3.14-slim-trixie
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 
