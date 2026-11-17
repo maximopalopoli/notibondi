@@ -9,6 +9,8 @@ const map = new maplibregl.Map({
   style: "https://tiles.openfreemap.org/styles/positron",
 });
 
+const noLive = document.getElementById("no-live");
+
 // direction 0 is blue, direction 1 is red
 const BLUE = "#2563eb";
 const RED = "#dc2626";
@@ -135,7 +137,9 @@ async function refreshVehicles() {
   try {
     const response = await fetch(el.dataset.vehiclesUrl);
     if (response.ok) {
-      map.getSource("vehicles").setData(await response.json());
+      const data = await response.json();
+      map.getSource("vehicles").setData(data);
+      noLive.hidden = data.features.length > 0;
     } else {
       console.error("could not load the buses", response.status);
     }
