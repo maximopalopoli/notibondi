@@ -88,7 +88,7 @@ async def test_a_timeout_is_a_gcba_error(settings):
 
 @pytest.mark.parametrize(
     ("fetch", "read_timeout"),
-    [(fetch_trip_updates, 35), (fetch_vehicle_positions, 30)],
+    [(fetch_trip_updates, 45), (fetch_vehicle_positions, 30)],
 )
 @pytest.mark.anyio
 async def test_connects_fast_but_reads_slow(settings, fetch, read_timeout):

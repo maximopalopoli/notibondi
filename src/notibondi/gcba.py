@@ -13,8 +13,9 @@ class GcbaError(Exception):
 # on 2026-11-16, each try waited 30 s to fail with ConnectTimeout; with a
 # short connect timeout it fails in 5 s and the backoff retries sooner.
 CONNECT_TIMEOUT = 5
-# A good download took ~29 s on 2026-11-16, so 30 s was too tight
-TRIP_UPDATES_TIMEOUT = httpx2.Timeout(35, connect=CONNECT_TIMEOUT)
+# On 2026-11-17 the feed was 8.9 MB and the server took 23 to 37 s to send
+# the first byte, so 35 s cut off good downloads
+TRIP_UPDATES_TIMEOUT = httpx2.Timeout(45, connect=CONNECT_TIMEOUT)
 # The full feed is ~1.5 MB. Five good downloads on 2026-11-16 took 1.5 to
 # 19 s, so 20 s would cut off good ones.
 VEHICLE_POSITIONS_TIMEOUT = httpx2.Timeout(30, connect=CONNECT_TIMEOUT)
