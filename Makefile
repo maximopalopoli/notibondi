@@ -1,7 +1,7 @@
 .PHONY: up migrate import holidays dev lint test check fmt pilot
 
 up:
-	docker compose up -d --wait
+	docker compose up -d --wait db
 
 migrate:
 	uv run alembic upgrade head
