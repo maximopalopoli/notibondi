@@ -36,14 +36,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv has no major tag (v10), only full versions
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "0.12.23"
           enable-cache: true
 
+      # With the project's psycopg, so it doesn't need psql on the runner
+      # (act's image doesn't have it). The URL is DATABASE_URL without
+      # "+psycopg", which is SQLAlchemy's syntax.
       - name: Create the test database
-        run: psql -h localhost -U notibondi -d postgres -c "CREATE DATABASE notibondi_test"
-        env:
-          PGPASSWORD: notibondi
+        run: >-
+          uv run python -c "import psycopg;
+          psycopg.connect('postgresql://notibondi:notibondi@localhost:5432/postgres',
+          autocommit=True).execute('CREATE DATABASE notibondi_test')"
 
       - run: make check
