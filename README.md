@@ -107,7 +107,8 @@ Every page uses the same query functions as the JSON API. The docs are at
   `trip_id` don't match the static GTFS. Worse, they collide with IDs that
   exist there, so a direct join silently gives the wrong line. So each live
   `route_id` gets its line name first from `vehiclePositionsSimple`, a JSON
-  feed that names it (`152`, and the stops pick the branch), and otherwise
+  feed that names it (`152`, and the stops pick the branch; messy names like
+  `85 A - P. Alsina` or `247-5` are read as `85A` and `247R5`), and otherwise
   from the stops it shares with the static lines, since stop IDs do match.
   Live and scheduled arrivals are then merged per stop, by line name. The
   names are downloaded every 10 minutes and kept, because that feed is slow
@@ -132,9 +133,10 @@ Every page uses the same query functions as the JSON API. The docs are at
 
 ## Known limits
 
-- **Live data covers about half of the lines** (528 of 1072 on 2026-11-17).
-  The rest have names that don't match the GTFS (`159 L roja`, `247-5`),
+- **Live data covers about half of the lines** (573 of 1072 on 2026-11-17).
+  The rest have names of branches the GTFS doesn't have (`1 B`, `504METALURG`),
   branches that can't be told apart (152), or no bus in the names feed yet.
+  The headsign letter doesn't help: `Ramal A` often isn't branch A in the GTFS.
   Arrivals also need the stop: the static GTFS (2021) only knows 41% of the
   stops in today's feed.
 - **Some routes on the map may be outdated.** They come from the 2021 GTFS,

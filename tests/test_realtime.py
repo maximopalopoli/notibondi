@@ -15,6 +15,7 @@ from notibondi.realtime import (
     load_lines_by_stop,
     merge_arrivals,
     resolve_lines,
+    spellings,
 )
 from notibondi.schedules import (
     BUENOS_AIRES,
@@ -181,6 +182,56 @@ def test_resolve_lines_falls_back_to_the_stops_for_an_unknown_name():
 def test_resolve_lines_does_not_take_a_longer_number_as_a_branch():
     # "15" is not a branch of 152A
     assert resolve_lines({}, {"A": {"152A"}}, {"834": "15"}) == {}
+
+
+@pytest.mark.parametrize(
+    ("name", "line"),
+    [
+        ("85 A - P. Alsina", "85A"),
+        ("159 L roja", "159L"),
+        ("160B Claypole", "160B"),
+        ("247-5", "247R5"),
+        ("324-6C", "324R6C"),
+    ],
+)
+def test_resolve_lines_reads_messy_names(name, line):
+    lines_by_stop = {"A": {line}, "B": {"60"}}
+
+    assert resolve_lines({}, lines_by_stop, {"834": name}) == {"834": line}
+
+
+def test_resolve_lines_picks_the_branch_of_a_number_and_words():
+    # "152 x Autopista" names no branch: the stops choose, as for "152"
+    result = resolve_lines({"834": {"A", "B"}}, BRANCHES, {"834": "152 x Autopista"})
+
+    assert result == {"834": "152A"}
+
+
+def test_resolve_lines_needs_a_stop_for_a_number_and_words():
+    # A single branch is not enough: the words may mean one the GTFS lacks
+    lines_by_stop = {"A": {"53A"}}
+
+    assert resolve_lines({}, lines_by_stop, {"834": "53 Rápido"}) == {}
+    assert resolve_lines({"834": {"A"}}, lines_by_stop, {"834": "53 Rápido"}) == {
+        "834": "53A"
+    }
+
+
+@pytest.mark.parametrize("name", ["1 B", "21 R Fca Ford", "188 1 Budge"])
+def test_resolve_lines_does_not_swap_a_named_branch(name):
+    # The name says a branch the GTFS doesn't have: no other branch by name.
+    # Only one stop of three is known, so the stops can't decide either.
+    number = name.split()[0]
+    lines_by_stop = {"A": {number + "A"}}
+
+    result = resolve_lines({"834": {"A", "X", "Y"}}, lines_by_stop, {"834": name})
+
+    assert result == {}
+
+
+@pytest.mark.parametrize("name", ["", " "])
+def test_spellings_of_an_empty_name(name):
+    assert spellings(name) == [name]
 
 
 def test_branches_by_name():

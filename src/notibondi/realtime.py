@@ -1,3 +1,4 @@
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -119,6 +120,22 @@ def branches_by_name(lines: set[str]) -> dict[str, set[str]]:
     return result
 
 
+# "53 Rápido", "166 x Gaona": a line number and words, and the stops pick the
+# branch. Not "1 B", "21 R Fca Ford" or "188 1 Budge": those name a branch,
+# and if the GTFS doesn't have it, another one would be a wrong guess.
+NUMBER_AND_WORDS = re.compile(r"(\d+) (?![A-Z]\b|\d)")
+
+
+def spellings(name: str) -> list[str]:
+    """How a live name may be written in the GTFS, the most exact first."""
+    # "85 A - P. Alsina" -> "85A", "159 L roja" -> "159L", "160B Claypole" -> "160B"
+    words = re.sub(r"^(\d+) ([A-Z])\b", r"\1\2", name).split()
+    if not words:
+        return [name]
+    # "247-5" -> "247R5": the GTFS calls numbered branches R1, R2...
+    return [name, words[0], re.sub(r"-(\d)", r"R\1", words[0])]
+
+
 def _clear_winner(votes: Counter) -> tuple[str, int] | None:
     top = votes.most_common(2)
     if not top or (len(top) > 1 and top[0][1] == top[1][1]):
@@ -133,13 +150,18 @@ def _line_by_name(
     static_lines: set[str],
     branches: dict[str, set[str]],
 ) -> str | None:
-    if name in static_lines:
-        return name
+    for spelling in spellings(name):
+        if spelling in static_lines:
+            return spelling
     # The feed often names the line and not the branch ("152"): if it has
     # more than one, the stops choose
     candidates = branches.get(name, set())
     if len(candidates) == 1:
         return next(iter(candidates))
+    if not candidates and (match := NUMBER_AND_WORDS.match(name)):
+        # No shortcut for a single branch here: the words may mean one the
+        # GTFS doesn't have, so at least one stop has to agree
+        candidates = branches.get(match[1], set())
     votes = Counter(
         line
         for stop_id in stops
