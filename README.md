@@ -114,6 +114,11 @@ Every page uses the same query functions as the JSON API. The docs are at
   names are downloaded every 10 minutes and saved in `route_names`, because
   that feed is slow and only lists the routes with a bus right now. After a
   restart the app starts with the saved ones, instead of waiting for buses.
+- **Buses of an unknown branch show on every branch.** Many live names say
+  the line and not the branch (`152`, `133 Pte. Saavedra`), and sometimes
+  the stops can't pick one. Those buses show up faded on the map of every
+  branch of their line, with a note: a 152A user may see a 152C bus, but
+  without them the 152 had no buses at all.
 - **The midnight trap.** A trip belongs to the service day it started on, so
   after midnight the buses still running from yesterday have times like
   `24:30:00`. The arrivals query looks at both service days.
@@ -137,6 +142,8 @@ Every page uses the same query functions as the JSON API. The docs are at
 - **Live data covers about half of the lines** (573 of 1072 on 2026-11-17).
   The rest have names of branches the GTFS doesn't have (`1 B`, `504METALURG`),
   branches that can't be told apart (152), or no bus in the names feed yet.
+  On the map, the buses of an unknown branch show on every branch, faded;
+  lines the GTFS doesn't have at all (239, 507) don't show.
   The headsign letter doesn't help: `Ramal A` often isn't branch A in the GTFS.
   Arrivals also need the stop: the static GTFS (2021) only knows 41% of the
   stops in today's feed.

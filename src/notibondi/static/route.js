@@ -10,6 +10,7 @@ const map = new maplibregl.Map({
 });
 
 const noLive = document.getElementById("no-live");
+const unknownBranch = document.getElementById("unknown-branch");
 
 // direction 0 is blue, direction 1 is red
 const BLUE = "#2563eb";
@@ -100,10 +101,26 @@ map.on("load", async () => {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
   });
+  // Buses of this line number whose branch we don't know: faded and under
+  // the others, since they may belong to another branch
+  map.addLayer({
+    id: "vehicles-unknown-branch",
+    type: "circle",
+    source: "vehicles",
+    filter: ["!", ["get", "branch_known"]],
+    paint: {
+      "circle-radius": 6,
+      "circle-color": DIRECTION_COLOR,
+      "circle-opacity": 0.35,
+      "circle-stroke-color": "#6b7280",
+      "circle-stroke-width": 1.5,
+    },
+  });
   map.addLayer({
     id: "vehicles",
     type: "circle",
     source: "vehicles",
+    filter: ["get", "branch_known"],
     paint: {
       "circle-radius": 7,
       "circle-color": DIRECTION_COLOR,
@@ -140,6 +157,7 @@ async function refreshVehicles() {
       const data = await response.json();
       map.getSource("vehicles").setData(data);
       noLive.hidden = data.features.length > 0;
+      unknownBranch.hidden = data.features.every((f) => f.properties.branch_known);
     } else {
       console.error("could not load the buses", response.status);
     }

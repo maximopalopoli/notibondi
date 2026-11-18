@@ -16,7 +16,14 @@ from notibondi.gcba import (
     fetch_trip_updates,
     fetch_vehicle_positions,
 )
-from notibondi.realtime import LiveArrival, Vehicle, build_index, group_vehicles
+from notibondi.realtime import (
+    LiveArrival,
+    Vehicle,
+    build_index,
+    group_vehicles,
+    line_number,
+    unknown_branches,
+)
 from notibondi.schedules import now
 
 PEAK_SECONDS = 30
@@ -63,6 +70,8 @@ class LiveFeed:
     vehicles: dict[str, list[Vehicle]] = field(default_factory=dict)
     vehicles_at: float | None = None  # time.monotonic() of the last good positions
     lines: dict[str, str] = field(default_factory=dict)
+    # Named route_ids without a line, by line number (see unknown_branches)
+    unknown_branch: dict[str, str] = field(default_factory=dict)
     # Every name seen, by live route_id (see fetch_route_names). It starts
     # with the saved ones, so it doesn't wait for the first download.
     route_names: dict[str, str] = field(default_factory=dict)
@@ -72,10 +81,17 @@ MAX_VEHICLE_AGE_SECONDS = 60 * 5
 
 
 def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
+    """The buses of a line, plus the ones of its number with an unknown branch.
+
+    Those have branch_known false, so the map can tell them apart: a bus of
+    "152" may be a 152A or a 152C, and it shows up on both.
+    """
+    number = line_number(line)
+    routes = [(r, True) for r, name in live.lines.items() if name == line]
+    routes += [(r, False) for r, n in live.unknown_branch.items() if n == number]
+
     features = []
-    for live_route_id, name in live.lines.items():
-        if name != line:
-            continue
+    for live_route_id, branch_known in routes:
         for v in live.vehicles.get(live_route_id, []):
             if now - v.timestamp > MAX_VEHICLE_AGE_SECONDS:
                 continue
@@ -91,6 +107,7 @@ def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
                         "label": v.label,
                         "timestamp": v.timestamp,
                         "direction_id": v.direction_id,
+                        "branch_known": branch_known,
                     },
                 }
             )
@@ -131,15 +148,18 @@ async def refresh_forever(
     settings: Settings,
     lines_by_stop: dict[str, set[str]],
 ):
+    static_lines = {line for lines in lines_by_stop.values() for line in lines}
+
     async def refresh():
         feed = await fetch_trip_updates(client, settings)
-        index, lines = await asyncio.to_thread(
-            build_index, feed, lines_by_stop, live.route_names
-        )
-        # Only reached if both lines above worked. Replacing the whole index
+        names = live.route_names
+        index, lines = await asyncio.to_thread(build_index, feed, lines_by_stop, names)
+        unknown = unknown_branches(names, lines, static_lines)
+        # Only reached if everything above worked. Replacing the whole index
         # in one step means readers see the old one or the new one, no lock.
         live.index = index
         live.lines = lines
+        live.unknown_branch = unknown
         live.fetched_at = time.monotonic()
         log.info("feed refreshed: %d stops", len(index))
 

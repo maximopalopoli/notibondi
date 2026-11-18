@@ -12,12 +12,14 @@ from notibondi.realtime import (
     build_index,
     collect_stops_by_route,
     group_vehicles,
+    line_number,
     load_lines_by_stop,
     load_route_names,
     merge_arrivals,
     resolve_lines,
     save_route_names,
     spellings,
+    unknown_branches,
 )
 from notibondi.schedules import (
     BUENOS_AIRES,
@@ -39,6 +41,32 @@ def load_feed(name: str) -> gtfs_realtime_pb2.FeedMessage:
 def feed_205():
     # Line 108 towards Liniers, saved on 2026-11-12 at 11:06:30.
     return load_feed("trip_updates_205.pb")
+
+
+# line_number and unknown_branches
+
+
+@pytest.mark.parametrize(
+    ("line", "number"),
+    [("152A", "152"), ("1 B", "1"), ("324R16", "324"), ("60", "60"), ("Exp", None)],
+)
+def test_line_number(line, number):
+    assert line_number(line) == number
+
+
+def test_unknown_branches_keeps_named_route_ids_without_a_line():
+    names = {"834": "152", "311": "152A", "999": "133 Pte. Saavedra"}
+    lines = {"311": "152A"}
+
+    result = unknown_branches(names, lines, {"152A", "152B", "133A"})
+
+    assert result == {"834": "152", "999": "133"}
+
+
+def test_unknown_branches_leaves_out_numbers_the_gtfs_does_not_have():
+    names = {"834": "239A-W", "835": "Expreso"}
+
+    assert unknown_branches(names, {}, {"152A"}) == {}
 
 
 # load_route_names and save_route_names

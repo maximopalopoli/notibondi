@@ -216,6 +216,30 @@ def resolve_lines(
     return result
 
 
+def line_number(line: str) -> str | None:
+    """A line without its branch: "152A" -> "152", "1 B" -> "1"."""
+    match = re.match(r"\d+", line)
+    return match[0] if match else None
+
+
+def unknown_branches(
+    names: dict[str, str], lines: dict[str, str], static_lines: set[str]
+) -> dict[str, str]:
+    """The line number of each named route_id that resolve_lines left out.
+
+    Most of them are lines the GTFS has with a branch we can't tell ("152",
+    "133 Pte. Saavedra"), so the map shows them on every branch of the line.
+    Numbers the GTFS doesn't have (239, 507) have no page to show them on.
+    """
+    numbers = {line_number(line) for line in static_lines}
+    result = {}
+    for route_id, name in names.items():
+        number = line_number(name)
+        if route_id not in lines and number is not None and number in numbers:
+            result[route_id] = number
+    return result
+
+
 def load_lines_by_stop(conn: Connection) -> dict[str, set[str]]:
     """Map each stop_id to the static line names that pass through it."""
     rows = conn.execute(

@@ -558,6 +558,24 @@ async def test_a_failed_save_keeps_the_names(settings, no_waiting_for_names):
 
 
 @pytest.mark.anyio
+async def test_the_arrivals_refresh_keeps_the_unknown_branches(settings, lines_by_stop):
+    # "108" with stops that don't pick a branch: 205 has no line, only a number
+    live = LiveFeed(route_names={"205": "108", "999": "239A-W"})
+    lines_by_stop = {stop: {"108A", "108B"} for stop in lines_by_stop}
+    client, _ = responses(200)
+
+    async with client:
+        await run_until(
+            refresh_forever(live, client, settings, lines_by_stop),
+            lambda: live.fetched_at is not None,
+        )
+
+    assert live.lines == {}
+    # 239 is not in the GTFS: no page would show it
+    assert live.unknown_branch == {"205": "108"}
+
+
+@pytest.mark.anyio
 async def test_the_arrivals_refresh_uses_the_route_names(settings, lines_by_stop):
     # Route 205 resolves to 108A by its stops; its name says otherwise
     live = LiveFeed(route_names={"205": "108B"})
@@ -619,6 +637,7 @@ def test_vehicles_geojson_makes_one_point_per_bus(live_108):
         "label": "2429-4868",
         "timestamp": 1794830100,
         "direction_id": 0,
+        "branch_known": True,
     }
 
 
@@ -663,3 +682,36 @@ def test_vehicles_geojson_skips_a_live_route_without_positions():
     live = LiveFeed(lines={"205": "108A"}, vehicles={})
 
     assert vehicles_geojson(live, "108A", SAMPLE_NOW)["features"] == []
+
+
+def test_vehicles_geojson_adds_the_buses_of_an_unknown_branch():
+    # 834 is a "152" bus: it shows on 152A and 152C, marked as unknown
+    live = LiveFeed(
+        lines={"311": "152A"},
+        unknown_branch={"834": "152"},
+        vehicles={"311": [bus("a")], "834": [bus("b")]},
+    )
+
+    on_a = vehicles_geojson(live, "152A", SAMPLE_NOW)["features"]
+    on_c = vehicles_geojson(live, "152C", SAMPLE_NOW)["features"]
+
+    assert {f["id"]: f["properties"]["branch_known"] for f in on_a} == {
+        "a": True,
+        "b": False,
+    }
+    assert [(f["id"], f["properties"]["branch_known"]) for f in on_c] == [("b", False)]
+
+
+def test_vehicles_geojson_does_not_add_another_number_as_unknown_branch():
+    live = LiveFeed(unknown_branch={"834": "15"}, vehicles={"834": [bus("b")]})
+
+    assert vehicles_geojson(live, "152A", SAMPLE_NOW)["features"] == []
+
+
+def test_vehicles_geojson_drops_old_positions_of_an_unknown_branch():
+    live = LiveFeed(
+        unknown_branch={"834": "152"},
+        vehicles={"834": [bus("old", SAMPLE_NOW - 301)]},
+    )
+
+    assert vehicles_geojson(live, "152A", SAMPLE_NOW)["features"] == []
