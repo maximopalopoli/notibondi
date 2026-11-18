@@ -42,6 +42,20 @@ You need [uv](https://docs.astral.sh/uv/) and Docker.
    (loads `holidays.csv`).
 5. **App.** `make dev` and open <http://localhost:8000>.
 
+   With `--reload`, every saved `.py` restarts the app and downloads the live
+   feeds again (`tripUpdates` alone is ~9 MB and can take 30 s). To work
+   without the GCBA, set `LIVE_FEEDS` in `.env`:
+
+   | `LIVE_FEEDS` | What the app does |
+   | --- | --- |
+   | `gcba` (default) | downloads the live feeds in the background, as in production |
+   | `fixtures` | loads the recorded 108 feeds from `tests/fixtures/` once, moved to the current time, so the 108A has buses and live arrivals with no network |
+   | `off` | no live data at all: only scheduled times |
+
+   `fixtures` only works from the repo, because the Docker image doesn't
+   have `tests/`. In both `fixtures` and `off`, `/health` doesn't mean the
+   GCBA is up.
+
    Or run it in Docker instead: `docker compose up --build`, and open the same
    URL. The image runs a single uvicorn worker without `--reload`, so it's for
    running the app, not for developing it. Stop `make dev` first, because both

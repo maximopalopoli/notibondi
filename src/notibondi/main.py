@@ -16,6 +16,7 @@ from sqlalchemy import Connection
 
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
+from notibondi.fixtures import load_fixtures
 from notibondi.realtime import (
     load_lines_by_stop,
     load_route_names,
@@ -69,20 +70,24 @@ async def lifespan(app: FastAPI):
     app.state.live = LiveFeed(route_names=route_names)
     async with httpx2.AsyncClient(timeout=30) as client:
         settings = get_settings()
-        # Separate tasks, so a slow download never delays the others
-        tasks = [
-            asyncio.create_task(
-                refresh_forever(app.state.live, client, settings, lines_by_stop)
-            ),
-            asyncio.create_task(
-                refresh_vehicles_forever(app.state.live, client, settings)
-            ),
-            asyncio.create_task(
-                refresh_route_names_forever(
-                    app.state.live, client, settings, save_names
-                )
-            ),
-        ]
+        tasks = []
+        if settings.live_feeds == "gcba":
+            # Separate tasks, so a slow download never delays the others
+            tasks = [
+                asyncio.create_task(
+                    refresh_forever(app.state.live, client, settings, lines_by_stop)
+                ),
+                asyncio.create_task(
+                    refresh_vehicles_forever(app.state.live, client, settings)
+                ),
+                asyncio.create_task(
+                    refresh_route_names_forever(
+                        app.state.live, client, settings, save_names
+                    )
+                ),
+            ]
+        elif settings.live_feeds == "fixtures":
+            load_fixtures(app.state.live, lines_by_stop)
         yield
         for task in tasks:
             task.cancel()

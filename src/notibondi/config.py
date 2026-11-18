@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     gcba_client_id: str
     gcba_client_secret: SecretStr
     gcba_base_url: str = "https://apitransporte.buenosaires.gob.ar"
+    live_feeds: Literal["gcba", "fixtures", "off"] = "gcba"
 
 
 # Settings are built on first call, not at import time, so importing this
