@@ -69,6 +69,7 @@ Other commands:
 | `make check` | lint + tests (the database must be up) |
 | `make fmt` | fixes lint and formats the code |
 | `make pilot` | records the live feed of one line to `data/pilot.sqlite` |
+| `make track` | records every AMBA bus position, once a minute, to `data/track.sqlite` (~1 GB a day) |
 | `docker compose run --rm app alembic upgrade head` | runs the migrations from the app image, without uv |
 
 When the app runs in Docker:

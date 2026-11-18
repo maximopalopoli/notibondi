@@ -1,4 +1,4 @@
-.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot
+.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot track
 
 up:
 	docker compose up -d --wait db
@@ -33,3 +33,6 @@ fmt:
 
 pilot:
 	uv run python pilot/recorder.py
+
+track:
+	uv run python pilot/tracker.py
