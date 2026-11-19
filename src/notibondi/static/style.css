@@ -113,3 +113,14 @@ body {
 #map {
   height: 70vh;
 }
+
+#home-map {
+  height: 40vh;
+  min-height: 15rem;
+  margin: 0 0 1rem;
+}
+
+/* The stop opened from the list or the map */
+.stops > li.selected > .stop strong {
+  color: #1a73e8;
+}

@@ -64,6 +64,8 @@ def test_nearby_endpoint_returns_close_stops(client):
         "stop_id": "6490106165",
         "stop_name": "PLAZA ITALIA",
         "distance_m": 0,
+        "lat": pytest.approx(PLAZA_ITALIA["lat"]),
+        "lon": pytest.approx(PLAZA_ITALIA["lon"]),
         "lines": ["152A", "505R3"],
     }
 
@@ -192,6 +194,8 @@ def test_nearby_endpoint_returns_empty_lines_for_stop_without_routes(client):
             "stop_id": "999001",
             "stop_name": "PARADA SIN LINEAS",
             "distance_m": 0,
+            "lat": pytest.approx(NO_LINES_STOP["lat"]),
+            "lon": pytest.approx(NO_LINES_STOP["lon"]),
             "lines": [],
         }
     ]

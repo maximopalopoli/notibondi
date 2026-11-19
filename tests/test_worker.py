@@ -634,6 +634,7 @@ def test_vehicles_geojson_makes_one_point_per_bus(live_108):
         [-58.3923416, -34.5912895]
     )
     assert feature["properties"] == {
+        "line": "108A",
         "label": "2429-4868",
         "timestamp": 1794830100,
         "direction_id": 0,

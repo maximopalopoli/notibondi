@@ -1,7 +1,8 @@
 {% if place %}<p class="place">Paradas cerca de <strong>{{ place }}</strong></p>{% endif %}
-<ul class="stops">
+{# The point the distances are measured from, and each stop's position: home.js draws them #}
+<ul class="stops"{% if origin %} data-origin-lat="{{ origin[0] }}" data-origin-lon="{{ origin[1] }}"{% endif %}>
   {% for stop in stops %}
-  <li>
+  <li data-stop-id="{{ stop.stop_id }}"{% if stop.lat is defined %} data-lat="{{ stop.lat }}" data-lon="{{ stop.lon }}"{% endif %}>
     <button type="button" class="stop"
             hx-get="/partials/stops/{{ stop.stop_id }}/arrivals{% if stop.distance_m is defined %}?distance_m={{ stop.distance_m }}{% endif %}"
             hx-target="next .arrivals-slot">

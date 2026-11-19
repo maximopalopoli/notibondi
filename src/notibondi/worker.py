@@ -104,6 +104,8 @@ def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
                         "coordinates": [v.lon, v.lat],
                     },
                     "properties": {
+                        # The branch only when it's known: "152", not a guessed "152A"
+                        "line": line if branch_known else number,
                         "label": v.label,
                         "timestamp": v.timestamp,
                         "direction_id": v.direction_id,

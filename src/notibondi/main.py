@@ -41,6 +41,7 @@ from notibondi.stops import (
     find_nearby_stops,
     search_stops,
     stop_exists,
+    stop_lines,
 )
 from notibondi.walk import leave_in, walk_minutes
 from notibondi.worker import (
@@ -167,7 +168,11 @@ def nearby_stops_partial(
     return templates.TemplateResponse(
         request,
         "partials/stops.html",
-        {"stops": stops, "empty_message": "No hay paradas cerca."},
+        {
+            "stops": stops,
+            "origin": (lat, lon),
+            "empty_message": "No hay paradas cerca.",
+        },
     )
 
 
@@ -231,6 +236,7 @@ async def address_stops_partial(
         {
             "stops": stops,
             "place": place.label,
+            "origin": (place.lat, place.lon),
             "empty_message": "No hay paradas cerca de esa dirección.",
         },
     )
@@ -275,6 +281,24 @@ def stop_arrivals_partial(
         request,
         "partials/arrivals.html",
         {"stop_id": stop_id, "distance_m": distance_m, "rows": rows},
+    )
+
+
+@app.get("/api/v1/stops/{stop_id}/vehicles")
+def stop_vehicles_api(stop_id: str, conn: Conn, live: Live):
+    """The live buses of every line that stops here, for the home map."""
+    lines = stop_lines(conn, stop_id)
+    if lines is None:
+        raise HTTPException(status_code=404, detail="Stop not found")
+    at = time.time()
+    # A bus of an unknown branch comes once per branch of its number
+    features = {}
+    for line in lines:
+        for feature in vehicles_geojson(live, line, at)["features"]:
+            features.setdefault(feature["id"], feature)
+    return JSONResponse(
+        content={"type": "FeatureCollection", "features": list(features.values())},
+        media_type="application/geo+json",
     )
 
 

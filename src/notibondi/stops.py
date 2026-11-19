@@ -13,6 +13,9 @@ class Stop(BaseModel):
 
 class NearbyStop(Stop):
     distance_m: int
+    # For the map on the home page
+    lat: float
+    lon: float
 
 
 def find_nearby_stops(
@@ -23,6 +26,8 @@ def find_nearby_stops(
             SELECT s.stop_id,
                 s.stop_name,
                 ROUND(ST_Distance(s.geom, p.geom))::int AS distance_m,
+                ST_Y(s.geom::geometry) AS lat,
+                ST_X(s.geom::geometry) AS lon,
                 array_remove(
                     array_agg(r.route_short_name ORDER BY r.route_short_name),
                     NULL
@@ -69,6 +74,23 @@ def search_stops(conn: Connection, q: str, limit: int) -> list[Stop]:
     )
 
     return [Stop(**row._mapping) for row in rows]
+
+
+def stop_lines(conn: Connection, stop_id: str) -> list[str] | None:
+    """The lines that stop at stop_id, or None if there's no such stop."""
+    if not stop_exists(conn, stop_id):
+        return None
+    rows = conn.execute(
+        text("""
+            SELECT DISTINCT r.route_short_name
+            FROM stop_routes sr
+            JOIN routes r ON r.route_id = sr.route_id
+            WHERE sr.stop_id = :stop_id
+            ORDER BY r.route_short_name
+        """),
+        {"stop_id": stop_id},
+    )
+    return [row[0] for row in rows]
 
 
 def stop_exists(conn: Connection, stop_id: str) -> bool:

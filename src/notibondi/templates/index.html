@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 
 {% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', path='maplibre-gl.css') }}">
+<script src="{{ url_for('static', path='maplibre-gl.js') }}" defer></script>
 <script src="{{ url_for('static', path='location.js') }}" defer></script>
+<script src="{{ url_for('static', path='home.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -20,6 +23,9 @@
          enterkeyhint="search">
   <button type="submit">Buscar</button>
 </form>
+
+{# Hidden until there are stops to show: an empty map looks broken #}
+<div id="home-map" hidden></div>
 
 <div id="stops"><p>Buscando paradas cerca tuyo…</p></div>
 
