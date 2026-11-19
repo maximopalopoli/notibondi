@@ -2,7 +2,7 @@
   {% for stop in stops %}
   <li>
     <button type="button" class="stop"
-            hx-get="/partials/stops/{{ stop.stop_id }}/arrivals"
+            hx-get="/partials/stops/{{ stop.stop_id }}/arrivals{% if stop.distance_m is defined %}?distance_m={{ stop.distance_m }}{% endif %}"
             hx-target="next .arrivals-slot">
       <strong>{{ stop.stop_name }}</strong>
       {% if stop.distance_m is defined %}<span class="distance">{{ stop.distance_m }} m</span>{% endif %}

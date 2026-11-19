@@ -82,6 +82,16 @@ body {
   background: #eee;
 }
 
+.leave {
+  display: block;
+  font-size: 0.875rem;
+}
+
+/* A bus you can't walk to in time: still listed, so the list doesn't jump */
+.unreachable {
+  color: #666;
+}
+
 .tag-realtime {
   color: #fff;
   background: #1e8e3e;

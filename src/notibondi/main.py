@@ -40,6 +40,7 @@ from notibondi.stops import (
     search_stops,
     stop_exists,
 )
+from notibondi.walk import leave_in, walk_minutes
 from notibondi.worker import (
     Health,
     LiveFeed,
@@ -103,6 +104,7 @@ BASE_DIR = Path(__file__).parent
 Lat = Annotated[float, Query(ge=-90, le=90)]
 Lon = Annotated[float, Query(ge=-180, le=180)]
 Radius = Annotated[int, Query(gt=0, le=MAX_RADIUS_M)]
+DistanceM = Annotated[int | None, Query(ge=0, le=MAX_RADIUS_M)]
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -202,14 +204,25 @@ def stop_arrivals(stop_id: str, conn: Conn, live: Live, at: Now):
     include_in_schema=False,
 )
 def stop_arrivals_partial(
-    request: Request, stop_id: str, conn: Conn, live: Live, at: Now
+    request: Request,
+    stop_id: str,
+    conn: Conn,
+    live: Live,
+    at: Now,
+    distance_m: DistanceM = None,
 ):
     if not stop_exists(conn, stop_id):
         raise HTTPException(status_code=404, detail="Stop not found")
+    arrivals = arrivals_for(conn, live, stop_id, at)
+    # Without a distance (search by name) there's nothing to walk from
+    walk = walk_minutes(distance_m) if distance_m is not None else None
+    rows = [
+        (a, leave_in(a.minutes, walk) if walk is not None else None) for a in arrivals
+    ]
     return templates.TemplateResponse(
         request,
         "partials/arrivals.html",
-        {"stop_id": stop_id, "arrivals": arrivals_for(conn, live, stop_id, at)},
+        {"stop_id": stop_id, "distance_m": distance_m, "rows": rows},
     )
 
 

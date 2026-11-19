@@ -12,6 +12,7 @@ from notibondi.schedules import (
     next_arrivals,
     to_gtfs_time,
 )
+from notibondi.stops import MAX_RADIUS_M
 from notibondi.worker import MAX_FEED_AGE_SECONDS, LiveFeed
 
 PLAZA_ITALIA = "6490106165"
@@ -301,10 +302,94 @@ def test_stop_lists_load_the_arrivals_of_each_stop(client, url, params):
     html = client.get(url, params=params).text
 
     assert '<button type="button" class="stop"' in html
-    assert f'hx-get="{ARRIVALS_PARTIAL}"' in html
+    # A prefix: the nearby list adds ?distance_m=
+    assert f'hx-get="{ARRIVALS_PARTIAL}' in html
     # Not an id: the same stop can be both in the search and nearby lists
     assert 'hx-target="next .arrivals-slot"' in html
     assert html.count('class="stop"') == html.count('class="arrivals-slot"')
+
+
+def test_nearby_stops_pass_their_distance_to_the_arrivals(client):
+    html = client.get(
+        "/partials/stops/nearby", params={"lat": -34.581, "lon": -58.421}
+    ).text
+
+    assert f'hx-get="{ARRIVALS_PARTIAL}?distance_m=' in html
+
+
+def test_searched_stops_have_no_distance_to_pass(client):
+    html = client.get("/partials/stops/search", params={"q": "plaza italia"}).text
+
+    assert f'hx-get="{ARRIVALS_PARTIAL}"' in html
+    assert "distance_m" not in html
+
+
+# When to leave: at 8:00 on a Tuesday the 152A arrives in 5 min
+
+
+def test_arrivals_partial_says_when_to_leave(client_at):
+    # 246 m * 1.3 / 80 = 4.0 min of walking, rounded up to 4
+    html = (
+        client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL, params={"distance_m": 246}).text
+    )
+
+    assert "Salí en 1 min" in html
+
+
+def test_arrivals_partial_says_leave_now(client_at):
+    # 307 m is 4.99 min of walking, rounded up to 5: exactly the arrival
+    html = (
+        client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL, params={"distance_m": 307}).text
+    )
+
+    assert "Salí ahora" in html
+
+
+def test_arrivals_partial_greys_out_a_bus_you_cant_reach(client_at):
+    # 400 m is 7 min of walking, for a bus in 5
+    html = (
+        client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL, params={"distance_m": 400}).text
+    )
+
+    assert "No llegás" in html
+    assert 'class="unreachable"' in html
+    # Still listed, so the list doesn't jump every 30 s
+    assert "<strong>152A</strong>" in html
+    assert "puede variar" not in html
+
+
+def test_arrivals_partial_warns_that_a_scheduled_time_may_change(client_at):
+    html = (
+        client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL, params={"distance_m": 0}).text
+    )
+
+    assert "Salí en 5 min (programado, puede variar)" in html
+
+
+def test_arrivals_partial_without_distance_says_nothing_about_leaving(client_at):
+    html = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
+
+    assert "Salí" not in html
+    assert "No llegás" not in html
+    assert f'hx-get="{ARRIVALS_PARTIAL}"' in html
+
+
+def test_arrivals_partial_refresh_keeps_the_distance(client_at):
+    # Without it, the "salí en" text would vanish after the first 30 s
+    html = (
+        client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL, params={"distance_m": 246}).text
+    )
+
+    assert f'hx-get="{ARRIVALS_PARTIAL}?distance_m=246"' in html
+
+
+@pytest.mark.parametrize("distance_m", [-1, MAX_RADIUS_M + 1, "lejos"])
+def test_arrivals_partial_rejects_a_bad_distance(client_at, distance_m):
+    response = client_at(at(TUESDAY, 8)).get(
+        ARRIVALS_PARTIAL, params={"distance_m": distance_m}
+    )
+
+    assert response.status_code == 422
 
 
 # Live and scheduled together

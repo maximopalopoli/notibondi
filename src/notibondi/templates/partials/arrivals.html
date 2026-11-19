@@ -1,13 +1,22 @@
+{% set query = "?distance_m=" ~ distance_m if distance_m is not none else "" %}
 <div class="arrivals"
-     hx-get="/partials/stops/{{ stop_id }}/arrivals"
+     hx-get="/partials/stops/{{ stop_id }}/arrivals{{ query }}"
      hx-trigger="every 30s"
      hx-swap="outerHTML">
   <ul>
-    {% for a in arrivals %}
-    <li>
+    {% for a, leave in rows %}
+    <li{% if leave is not none and leave < 0 %} class="unreachable"{% endif %}>
       <strong>{{ a.line }}</strong> {{ a.headsign }}
       <span class="tag tag-{{ a.source }}">{% if a.source == "realtime" %}en vivo{% else %}programado{% endif %}</span>
       <span class="minutes">{% if a.minutes == 0 %}llegando{% else %}{{ a.minutes }} min{% endif %}</span>
+      {% if leave is not none %}
+      <span class="leave">
+        {%- if leave > 0 %}Salí en {{ leave }} min
+        {%- elif leave == 0 %}Salí ahora
+        {%- else %}No llegás{% endif %}
+        {%- if a.source == "scheduled" and leave >= 0 %} (programado, puede variar){% endif -%}
+      </span>
+      {% endif %}
     </li>
     {% else %}
     <li>No hay colectivos en los próximos 90 minutos.</li>
