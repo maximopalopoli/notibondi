@@ -13,10 +13,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Connection
+from starlette.concurrency import run_in_threadpool
 
 from notibondi.config import get_settings
 from notibondi.db import Conn, get_engine
 from notibondi.fixtures import load_fixtures
+from notibondi.geocode import GeocodeError, Geocoder
 from notibondi.realtime import (
     load_lines_by_stop,
     load_route_names,
@@ -89,6 +91,8 @@ async def lifespan(app: FastAPI):
             ]
         elif settings.live_feeds == "fixtures":
             load_fixtures(app.state.live, lines_by_stop)
+        # Not tied to LIVE_FEEDS: that setting is about the GCBA
+        app.state.geocoder = Geocoder(client, settings)
         yield
         for task in tasks:
             task.cancel()
@@ -115,6 +119,13 @@ def get_live(request: Request) -> LiveFeed:
 
 
 Live = Annotated[LiveFeed, Depends(get_live)]
+
+
+def get_geocoder(request: Request) -> Geocoder:
+    return request.app.state.geocoder
+
+
+GeocoderDep = Annotated[Geocoder, Depends(get_geocoder)]
 
 
 def arrivals_for(
@@ -181,6 +192,47 @@ def search_stops_partial(
         request,
         "partials/stops.html",
         {"stops": stops, "empty_message": "No se encontraron paradas con ese nombre."},
+    )
+
+
+def message(text: str) -> HTMLResponse:
+    # 200, not 4xx/5xx: htmx only swaps 2xx, and these are answers, not crashes
+    return HTMLResponse(f'<p class="error" role="alert">{text}</p>')
+
+
+@app.get(
+    "/partials/stops/address", response_class=HTMLResponse, include_in_schema=False
+)
+async def address_stops_partial(
+    request: Request,
+    conn: Conn,
+    geocoder: GeocoderDep,
+    q: Annotated[str, Query(max_length=200)] = "",
+):
+    """The stops near an address, as if it were the user's location."""
+    q = q.strip()
+    if len(q) < 3:
+        return message("Escribí una dirección, por ejemplo Triunvirato 3424.")
+    try:
+        place = await geocoder.search(q)
+    except GeocodeError:
+        logging.getLogger(__name__).warning("geocode failed", exc_info=True)
+        return message("No pudimos buscar la dirección. Probá de nuevo en un rato.")
+    if place is None:
+        return message(
+            "No encontramos esa dirección. Probá con calle y altura, "
+            "por ejemplo Triunvirato 3424."
+        )
+    # A sync query from an async route: in a thread, so it doesn't block the loop
+    stops = await run_in_threadpool(find_nearby_stops, conn, place.lat, place.lon, 400)
+    return templates.TemplateResponse(
+        request,
+        "partials/stops.html",
+        {
+            "stops": stops,
+            "place": place.label,
+            "empty_message": "No hay paradas cerca de esa dirección.",
+        },
     )
 
 

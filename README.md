@@ -6,10 +6,13 @@ when it doesn't), and see a line's route and its live buses on a map.
 
 ## Features
 
-- **Nearby stops**: the stops around a point, with the lines that stop there.
+- **Nearby stops**: the stops around your location, or around an address
+  ("Triunvirato 3424") when the browser can't find you, with the lines that
+  stop there.
 - **Stop search**: by name ("plaza italia").
 - **Arrivals**: the next buses at a stop. Live times from the GCBA real-time
-  feed, and the GTFS schedule for lines that have no live data.
+  feed, and the GTFS schedule for lines that have no live data. From a nearby
+  stop, each arrival also says when to leave ("Salí en 4 min", "No llegás").
 - **Lines and routes**: search a line by number ("152" gives 152A, 152B…) and
   see both directions on a map, with arrows that show where each one goes.
 - **Live buses**: the line's buses on the same map, colored by direction and
@@ -23,6 +26,7 @@ when it doesn't), and see a line's route and its live buses on a map.
 | API | FastAPI + Pydantic, served by `uvicorn` |
 | Database | PostgreSQL 17 + PostGIS, SQLAlchemy 2 Core (raw SQL with `text()`), hand-written Alembic migrations |
 | Real time | `httpx2` + `gtfs-realtime-bindings`, two asyncio tasks in the background |
+| Addresses | [Nominatim](https://nominatim.org) (OpenStreetMap), called from the server |
 | Web | Jinja2 + htmx, MapLibre GL (served from `static/`, no CDN) with the [OpenFreeMap](https://openfreemap.org) Positron vector style |
 | Infra | Docker: a multi-stage image built with uv that runs as a non-root user, and docker compose for the database and the app |
 
@@ -153,6 +157,11 @@ Every page uses the same query functions as the JSON API. The docs are at
   index is dropped before the load and built once at the end.
 
 ## Known limits
+
+- **Addresses are searched in CABA first.** Street names repeat across the
+  AMBA ("Corrientes 1500" is also in Quilmes and Olivos), so an address in
+  the province needs its locality: "Mitre 500, Quilmes". Nominatim allows one
+  request per second, so a busy instance would need its own Nominatim server.
 
 - **Live data covers about half of the lines** (573 of 1072 on 2026-11-17).
   The rest have names of branches the GTFS doesn't have (`1 B`, `504METALURG`),

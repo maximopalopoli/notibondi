@@ -65,6 +65,19 @@ def test_index_shows_a_loading_message_before_the_stops_arrive():
     assert "Buscando paradas cerca tuyo…" in html
 
 
+def test_index_has_an_address_form_that_searches_on_enter():
+    html = client.get("/").text
+
+    assert '<form id="address-form"' in html
+    assert 'hx-get="/partials/stops/address"' in html
+    assert 'hx-target="#stops"' in html
+    assert 'id="address" name="q"' in html
+    # Nominatim's policy forbids searching while typing: only the form's
+    # submit (Enter or the button) may trigger it
+    form = html[html.index('<form id="address-form"') : html.index("</form>")]
+    assert "hx-trigger" not in form
+
+
 def test_index_has_search_input_wired_to_the_partial():
     html = client.get("/").text
 

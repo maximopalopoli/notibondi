@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     gcba_client_secret: SecretStr
     gcba_base_url: str = "https://apitransporte.buenosaires.gob.ar"
     live_feeds: Literal["gcba", "fixtures", "off"] = "gcba"
+    nominatim_url: str = "https://nominatim.openstreetmap.org"
+    # Nominatim's policy asks for a User-Agent that says who is calling
+    nominatim_user_agent: str = (
+        "notibondi/0.1 (https://github.com/maximopalopoli/notibondi)"
+    )
 
 
 # Settings are built on first call, not at import time, so importing this

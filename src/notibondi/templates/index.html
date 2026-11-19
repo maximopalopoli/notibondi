@@ -9,7 +9,21 @@
 
 <p><a href="/routes">Buscar línea →</a></p>
 
-<label for="search">Buscar parada</label>
+{# A form, not hx-trigger="input": Nominatim's policy forbids searching while typing #}
+<form id="address-form" class="address"
+      hx-get="/partials/stops/address"
+      hx-target="#stops"
+      hx-sync="this:replace">
+  <label for="address">Tu dirección</label>
+  <input type="search" id="address" name="q" maxlength="200"
+         placeholder="Ej: Triunvirato 3424" autocomplete="street-address"
+         enterkeyhint="search">
+  <button type="submit">Buscar</button>
+</form>
+
+<div id="stops"><p>Buscando paradas cerca tuyo…</p></div>
+
+<label for="search">Buscar parada por nombre</label>
 <input type="search" id="search" name="q" maxlength="100"
        placeholder="Ej: plaza italia" autocomplete="off"
        hx-get="/partials/stops/search"
@@ -17,6 +31,4 @@
        hx-target="#search-results"
        hx-sync="this:replace">
 <div id="search-results"></div>
-
-<div id="stops"><p>Buscando paradas cerca tuyo…</p></div>
 {% endblock %}

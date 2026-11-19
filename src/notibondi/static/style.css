@@ -41,6 +41,19 @@ body {
   color: #b00020;
 }
 
+.address {
+  margin: 0 0 1rem;
+}
+
+.address label {
+  display: block;
+}
+
+/* Where the distances are measured from, so "300 m" isn't read as "from you" */
+.place {
+  margin: 0 0 0.5rem;
+}
+
 .stop {
   all: unset;
   box-sizing: border-box;
