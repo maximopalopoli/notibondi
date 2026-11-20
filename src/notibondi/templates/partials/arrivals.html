@@ -1,12 +1,25 @@
-{% set query = "?distance_m=" ~ distance_m if distance_m is not none else "" %}
 <div class="arrivals"
-     hx-get="/partials/stops/{{ stop_id }}/arrivals{{ query }}"
+     hx-get="/partials/stops/{{ stop_id }}/arrivals{{ query_string(distance_m=distance_m, line=line) }}"
      hx-trigger="every 30s"
      hx-swap="outerHTML">
+  {# One ☆ per line and direction, on its first row: three stars of the same
+     line is noise. None when the list is already of one line (a favorite
+     line's stop), whose star is on top #}
+  {% set starred = namespace(keys=[]) %}
   <ul>
     {% for a, leave in rows %}
     <li{% if leave is not none and leave < 0 %} class="unreachable"{% endif %}>
-      <strong>{{ a.line }}</strong> {{ a.headsign }}
+      {# A grid (style.css): what and "Salí en" on the left; the minutes and
+         the tag on the right, so a long destination never cuts the tag #}
+      <span class="what">
+        {%- set key = a.line ~ ":" ~ a.direction_id %}
+        {%- if not line and a.direction_id is not none and key not in starred.keys %}
+        {%- set starred.keys = starred.keys + [key] %}
+        <button type="button" class="fav" aria-pressed="false"
+                aria-label="Línea favorita: {{ a.line }} {{ a.headsign }}"
+                data-line="{{ a.line }}" data-direction="{{ a.direction_id }}">☆</button>
+        {%- endif %}
+        <strong>{{ a.line }}</strong> {{ a.headsign }}</span>
       <span class="tag tag-{{ a.source }}">{% if a.source == "realtime" %}en vivo{% else %}programado{% endif %}</span>
       <span class="minutes">{% if a.minutes == 0 %}llegando{% else %}{{ a.minutes }} min{% endif %}</span>
       {% if leave is not none %}
@@ -19,7 +32,7 @@
       {% endif %}
     </li>
     {% else %}
-    <li>No hay colectivos en los próximos 90 minutos.</li>
+    <li>No hay colectivos{% if line %} de la {{ line }}{% endif %} en los próximos 90 minutos.</li>
     {% endfor %}
   </ul>
 </div>

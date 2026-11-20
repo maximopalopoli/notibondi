@@ -3,11 +3,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from notibondi import main
 from notibondi.main import app, current_time, get_live
 from notibondi.realtime import LiveArrival
 from notibondi.schedules import (
     BUENOS_AIRES,
     Arrival,
+    first_per_line,
     from_gtfs_time,
     next_arrivals,
     to_gtfs_time,
@@ -67,14 +69,18 @@ def test_next_arrivals_on_a_weekday_morning(conn):
     # 3-1 at 10:00 is outside the 90 minute window.
     arrivals = next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8))
 
-    assert arrivals == [Arrival(line="152A", headsign="a Olivos", minutes=5)]
+    assert arrivals == [
+        Arrival(line="152A", headsign="a Olivos", minutes=5, direction_id=0)
+    ]
 
 
 def test_next_arrivals_uses_the_service_of_the_day(conn):
     # On Saturday the 08:07 trip runs and the weekday 08:05 one doesn't
     arrivals = next_arrivals(conn, PLAZA_ITALIA, at(SATURDAY, 8))
 
-    assert arrivals == [Arrival(line="152A", headsign="a Olivos", minutes=7)]
+    assert arrivals == [
+        Arrival(line="152A", headsign="a Olivos", minutes=7, direction_id=0)
+    ]
 
 
 def test_next_arrivals_window_crosses_midnight_within_the_service(conn):
@@ -82,14 +88,16 @@ def test_next_arrivals_window_crosses_midnight_within_the_service(conn):
     # same service is 70 minutes away
     arrivals = next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 23, 30))
 
-    assert arrivals == [Arrival(line="505R3", headsign="a Merlo", minutes=70)]
+    assert arrivals == [
+        Arrival(line="505R3", headsign="a Merlo", minutes=70, direction_id=0)
+    ]
 
 
 def test_next_arrivals_window_excludes_exactly_90_minutes(conn):
     # Trip 3-1 passes at 10:00: 90 minutes after 08:30 is out, 89 is in
     assert next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8, 30)) == []
     assert next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8, 31)) == [
-        Arrival(line="505R3", headsign="a Merlo", minutes=89)
+        Arrival(line="505R3", headsign="a Merlo", minutes=89, direction_id=0)
     ]
 
 
@@ -124,7 +132,9 @@ def test_next_arrivals_after_midnight_finds_yesterdays_late_trip(conn):
     # Tuesday's.
     arrivals = next_arrivals(conn, PLAZA_ITALIA, at(WEDNESDAY, 0, 30))
 
-    assert arrivals == [Arrival(line="505R3", headsign="a Merlo", minutes=10)]
+    assert arrivals == [
+        Arrival(line="505R3", headsign="a Merlo", minutes=10, direction_id=0)
+    ]
 
 
 def test_next_arrivals_after_midnight_counts_minutes_from_now(conn):
@@ -170,7 +180,13 @@ def test_arrivals_endpoint_returns_scheduled_arrivals(client_at):
 
     assert response.status_code == 200
     assert response.json() == [
-        {"line": "152A", "headsign": "a Olivos", "minutes": 5, "source": "scheduled"}
+        {
+            "line": "152A",
+            "headsign": "a Olivos",
+            "minutes": 5,
+            "source": "scheduled",
+            "direction_id": 0,
+        }
     ]
 
 
@@ -211,7 +227,13 @@ def test_arrivals_endpoint_after_midnight(client_at):
     )
 
     assert response.json() == [
-        {"line": "505R3", "headsign": "a Merlo", "minutes": 10, "source": "scheduled"}
+        {
+            "line": "505R3",
+            "headsign": "a Merlo",
+            "minutes": 10,
+            "source": "scheduled",
+            "direction_id": 0,
+        }
     ]
 
 
@@ -430,7 +452,13 @@ def test_arrivals_endpoint_with_feed_shows_live_arrivals(client_live):
     )
 
     assert response.json() == [
-        {"line": "152A", "headsign": "a Olivos", "minutes": 3, "source": "realtime"}
+        {
+            "line": "152A",
+            "headsign": "a Olivos",
+            "minutes": 3,
+            "source": "realtime",
+            "direction_id": 0,
+        }
     ]
 
 
@@ -524,3 +552,101 @@ def test_arrivals_partial_no_longer_has_a_global_source_line(client_at):
     html = client_at(at(TUESDAY, 8)).get(ARRIVALS_PARTIAL).text
 
     assert "Según el horario programado" not in html
+
+
+# Only one line: a favorite line on the home page
+
+
+def test_next_arrivals_of_one_line(conn):
+    assert next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8), "152A") == [
+        Arrival(line="152A", headsign="a Olivos", minutes=5, direction_id=0)
+    ]
+    assert next_arrivals(conn, PLAZA_ITALIA, at(TUESDAY, 8), "505R3") == []
+
+
+def test_the_arrivals_partial_of_one_line_skips_the_others(client_at):
+    client = client_at(at(TUESDAY, 8))
+    live = live_feed(("505R3", at(TUESDAY, 8, 3)), ("152A", at(TUESDAY, 8, 4)))
+    app.dependency_overrides[get_live] = lambda: live
+
+    html = client.get(
+        f"/partials/stops/{PLAZA_ITALIA}/arrivals", params={"line": "505R3"}
+    ).text
+
+    assert "<strong>505R3</strong>" in html
+    assert "<strong>152A</strong>" not in html
+    # Its refresh asks for the same line
+    assert f'hx-get="/partials/stops/{PLAZA_ITALIA}/arrivals?line=505R3"' in html
+
+
+def test_a_line_without_buses_says_which_line(client_at):
+    html = (
+        client_at(at(TUESDAY, 8))
+        .get(f"/partials/stops/{PLAZA_ITALIA}/arrivals", params={"line": "505R3"})
+        .text
+    )
+
+    assert "No hay colectivos de la 505R3 en los próximos 90 minutos." in html
+
+
+def test_the_line_must_be_a_line_name(client):
+    response = client.get(
+        f"/partials/stops/{PLAZA_ITALIA}/arrivals", params={"line": "1 OR 1=1"}
+    )
+
+    assert response.status_code == 422
+
+
+def test_only_the_first_three_of_each_line_are_kept():
+    arrivals = [
+        Arrival(line=line, headsign="", minutes=m)
+        for m, line in enumerate(["152A", "152A", "60", "152A", "152A", "60"])
+    ]
+
+    kept = first_per_line(arrivals)
+
+    assert [(a.line, a.minutes) for a in kept] == [
+        ("152A", 0),
+        ("152A", 1),
+        ("60", 2),
+        ("152A", 3),
+        ("60", 5),
+    ]
+
+
+# A ☆ to make the line a favorite, from the arrivals
+
+
+def test_each_line_of_the_arrivals_has_one_star(client_at):
+    client = client_at(at(TUESDAY, 8))
+
+    html = client.get(f"/partials/stops/{PLAZA_ITALIA}/arrivals").text
+
+    assert 'data-line="152A" data-direction="0"' in html
+
+
+def test_the_arrivals_of_one_line_have_no_star(client_at):
+    # A favorite line's stop: its star is on top, with the line
+    client = client_at(at(TUESDAY, 8))
+
+    html = client.get(
+        f"/partials/stops/{PLAZA_ITALIA}/arrivals", params={"line": "152A"}
+    ).text
+
+    assert 'class="fav"' not in html
+
+
+def test_three_arrivals_of_a_line_have_only_one_star(client_at, monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "arrivals_for",
+        lambda *args, **kwargs: [
+            Arrival(line="152A", headsign="a Olivos", minutes=m, direction_id=0)
+            for m in (5, 10, 15)
+        ],
+    )
+    client = client_at(at(TUESDAY, 8))
+
+    html = client.get(f"/partials/stops/{PLAZA_ITALIA}/arrivals").text
+
+    assert html.count('class="fav"') == 1
