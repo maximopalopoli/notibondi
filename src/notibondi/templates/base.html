@@ -6,11 +6,12 @@
   <title>{% block title %}notibondi{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
   <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+  <script src="{{ url_for('static', path='ui.js') }}" defer></script>
   <script src="{{ url_for('static', path='favorites.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>
-<header class="top">
+  <header class="top">
     {# The home page's title is the name; the other pages have their own h1 #}
     {% block brand %}<a class="brand" href="/">notibondi</a>{% endblock %}
     {# <details> opens and closes without JS; ui.js only closes it from outside #}
@@ -24,5 +25,9 @@
     </details>
   </header>
   {% block content %}{% endblock %}
+  {# A stop's panel, over any page. /stops/{id} comes with it open #}
+  <aside id="detail" class="detail" aria-labelledby="detail-title"{% if not detail_stop %} hidden{% endif %}>
+    {%- if detail_stop %}{% include "partials/stop_detail.html" %}{% endif -%}
+  </aside>
 </body>
 </html>

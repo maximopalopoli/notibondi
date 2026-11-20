@@ -1,0 +1,19 @@
+{# A stop's panel: a bottom sheet on a phone, a side panel on a computer
+   (style.css). ui.js opens it, gives it its own address and closes it #}
+<div class="detail-head" data-stop-id="{{ detail_stop.stop_id }}">
+  <h2 id="detail-title" tabindex="-1">{{ detail_stop.stop_name }}</h2>
+  {# favorites.js marks it, like any stop's star #}
+  <button type="button" class="fav" aria-pressed="false" aria-label="Favorita"
+          data-stop-id="{{ detail_stop.stop_id }}">☆</button>
+  <button type="button" class="detail-close" aria-label="Cerrar">×</button>
+</div>
+{% if detail_stop.lines %}
+<ul class="lines">
+  {% for line in detail_stop.lines %}<li>{{ line }}</li>{% endfor %}
+</ul>
+{% endif %}
+<p class="updated" aria-live="polite"></p>
+<div hx-get="/partials/stops/{{ detail_stop.stop_id }}/arrivals{{ query_string(distance_m=distance_m) }}"
+     hx-trigger="load" hx-swap="outerHTML">
+  <p>Buscando los próximos colectivos…</p>
+</div>

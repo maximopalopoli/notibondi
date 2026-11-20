@@ -21,17 +21,21 @@ from notibondi.db import Conn, get_engine
 from notibondi.fixtures import load_fixtures
 from notibondi.geocode import GeocodeError, Geocoder
 from notibondi.realtime import (
+    load_directions_by_stop,
     load_lines_by_stop,
     load_route_names,
     merge_arrivals,
     save_route_names,
 )
 from notibondi.routes import (
+    LINE_NAME,
+    LINE_NAME_PATTERN,
     Route,
     get_route,
     line_groups,
     route_exists,
     route_geojson,
+    route_headsigns,
     search_routes,
 )
 from notibondi.schedules import Arrival, next_arrivals, now
@@ -78,6 +82,7 @@ def save_names(names: dict[str, str]) -> None:
 async def lifespan(app: FastAPI):
     with get_engine().connect() as conn:
         lines_by_stop = load_lines_by_stop(conn)
+        directions_by_stop = load_directions_by_stop(conn)
         route_names = load_route_names(conn)
     app.state.live = LiveFeed(route_names=route_names)
     async with httpx2.AsyncClient(timeout=30) as client:
@@ -87,7 +92,13 @@ async def lifespan(app: FastAPI):
             # Separate tasks, so a slow download never delays the others
             tasks = [
                 asyncio.create_task(
-                    refresh_forever(app.state.live, client, settings, lines_by_stop)
+                    refresh_forever(
+                        app.state.live,
+                        client,
+                        settings,
+                        lines_by_stop,
+                        directions_by_stop,
+                    )
                 ),
                 asyncio.create_task(
                     refresh_vehicles_forever(app.state.live, client, settings)
@@ -99,7 +110,7 @@ async def lifespan(app: FastAPI):
                 ),
             ]
         elif settings.live_feeds == "fixtures":
-            load_fixtures(app.state.live, lines_by_stop)
+            load_fixtures(app.state.live, lines_by_stop, directions_by_stop)
         # Not tied to LIVE_FEEDS: that setting is about the GCBA
         app.state.geocoder = Geocoder(client, settings)
         yield
@@ -121,6 +132,8 @@ DistanceM = Annotated[int | None, Query(ge=0, le=MAX_RADIUS_M)]
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+# The arrivals only take a distance up to this ("Salí en" is for walking)
+templates.env.globals["MAX_RADIUS_M"] = MAX_RADIUS_M
 
 
 def get_live(request: Request) -> LiveFeed:
@@ -432,10 +445,13 @@ def stop_arrivals_partial(
     live: Live,
     at: Now,
     distance_m: DistanceM = None,
+    line: Annotated[str | None, Query(pattern=LINE_NAME_PATTERN)] = None,
 ):
+    """The arrivals of a stop; with ?line, only that line's (a favorite line
+    on the home page)."""
     if not stop_exists(conn, stop_id):
         raise HTTPException(status_code=404, detail="Stop not found")
-    arrivals = arrivals_for(conn, live, stop_id, at)
+    arrivals = arrivals_for(conn, live, stop_id, at, line)
     # Without a distance (search by name) there's nothing to walk from
     walk = walk_minutes(distance_m) if distance_m is not None else None
     rows = [
@@ -444,7 +460,7 @@ def stop_arrivals_partial(
     return templates.TemplateResponse(
         request,
         "partials/arrivals.html",
-        {"stop_id": stop_id, "distance_m": distance_m, "rows": rows},
+        {"stop_id": stop_id, "distance_m": distance_m, "line": line, "rows": rows},
     )
 
 
@@ -471,8 +487,8 @@ def stop_vehicles_api(
     at = time.time()
     # A bus of an unknown branch comes once per branch of its number
     features = {}
-    for line in lines:
-        for feature in vehicles_geojson(live, line, at)["features"]:
+    for name in lines:
+        for feature in vehicles_geojson(live, name, at, route_ids)["features"]:
             features.setdefault(feature["id"], feature)
     return JSONResponse(
         content={"type": "FeatureCollection", "features": list(features.values())},
@@ -480,9 +496,6 @@ def stop_vehicles_api(
     )
 
 
-# search_routes puts the line name inside a regex, so only letters and digits
-LINE_NAME_PATTERN = "^[0-9A-Za-z]{1,10}$"
-LINE_NAME = re.compile(LINE_NAME_PATTERN)
 LineQ = Annotated[str, Query(pattern=LINE_NAME_PATTERN)]
 
 
@@ -541,8 +554,10 @@ def search_routes_partial(
     q = q.strip()
     if not LINE_NAME.fullmatch(q):
         return HTMLResponse("")
+    routes = search_routes(conn, q)
+    headsigns = route_headsigns(conn, [r.route_id for r in routes])
     return templates.TemplateResponse(
-        request, "partials/routes.html", {"routes": search_routes(conn, q)}
+        request, "partials/routes.html", {"routes": routes, "headsigns": headsigns}
     )
 
 
