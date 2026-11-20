@@ -10,7 +10,6 @@ from notibondi.realtime import (
     group_vehicles,
     resolve_directions,
     routes_by_stop,
-    unknown_branches,
 )
 from notibondi.worker import LiveFeed
 
@@ -25,13 +24,10 @@ def load_fixtures(
     lines_by_stop: dict[str, set[str]],
     directions_by_stop: dict[str, set[tuple[str, int]]] | None = None,
 ):
-    static_lines = {line for lines in lines_by_stop.values() for line in lines}
-
     feed = read_trip_updates()
     shift_trip_timestamps(feed)
     names = live.route_names
-    index, lines = build_index(feed, lines_by_stop, names)
-    unknown = unknown_branches(names, lines, static_lines)
+    index, lines, unknown = build_index(feed, lines_by_stop, names)
     live.index = index
     live.lines = lines
     live.unknown_branch = unknown

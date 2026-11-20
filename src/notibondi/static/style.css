@@ -261,6 +261,12 @@ input[type="search"] {
   background: #1e8e3e;
 }
 
+/* A live bus of the number, branch unknown: "152 ramal sin confirmar" */
+.unsure {
+  color: #555;
+  font-style: italic;
+}
+
 #map {
   height: 70vh;
 }

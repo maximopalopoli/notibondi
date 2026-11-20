@@ -34,6 +34,8 @@ class Arrival(BaseModel):
     # The GTFS direction, for the line's ☆ (a favorite line is a line and a
     # direction). None when the schedule doesn't say (a live-only line)
     direction_id: int | None = None
+    # False: a live bus of this number ("152"), branch unknown
+    branch_known: bool = True
 
 
 def to_gtfs_time(seconds: int) -> str:

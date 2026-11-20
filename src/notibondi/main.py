@@ -21,6 +21,7 @@ from notibondi.db import Conn, get_engine
 from notibondi.fixtures import load_fixtures
 from notibondi.geocode import GeocodeError, Geocoder
 from notibondi.realtime import (
+    line_number,
     load_directions_by_stop,
     load_lines_by_stop,
     load_route_names,
@@ -174,8 +175,14 @@ def arrivals_for(
     scheduled = next_arrivals(conn, stop_id, at, line)
     if feed_health(live).status == "degraded":
         return scheduled
+    # With a line (152A), also the buses of its number of unknown branch
+    # ("152"): one of them may be a 152A
     live_arrivals = [
-        a for a in live.index.get(stop_id, []) if line is None or a.line == line
+        a
+        for a in live.index.get(stop_id, [])
+        if line is None
+        or a.line == line
+        or (not a.branch_known and a.line == line_number(line))
     ]
     return merge_arrivals(live_arrivals, scheduled, at)
 

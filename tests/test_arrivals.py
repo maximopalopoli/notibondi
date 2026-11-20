@@ -186,6 +186,7 @@ def test_arrivals_endpoint_returns_scheduled_arrivals(client_at):
             "minutes": 5,
             "source": "scheduled",
             "direction_id": 0,
+            "branch_known": True,
         }
     ]
 
@@ -233,6 +234,7 @@ def test_arrivals_endpoint_after_midnight(client_at):
             "minutes": 10,
             "source": "scheduled",
             "direction_id": 0,
+            "branch_known": True,
         }
     ]
 
@@ -458,6 +460,7 @@ def test_arrivals_endpoint_with_feed_shows_live_arrivals(client_live):
             "minutes": 3,
             "source": "realtime",
             "direction_id": 0,
+            "branch_known": True,
         }
     ]
 
@@ -650,3 +653,75 @@ def test_three_arrivals_of_a_line_have_only_one_star(client_at, monkeypatch):
     html = client.get(f"/partials/stops/{PLAZA_ITALIA}/arrivals").text
 
     assert html.count('class="fav"') == 1
+
+
+# A live bus of unknown branch
+
+
+def live_unsure(line: str, when: datetime) -> LiveFeed:
+    """A LiveFeed with one bus of `line` (a number), branch unknown."""
+    live = live_feed()
+    live.index[PLAZA_ITALIA] = [
+        LiveArrival(
+            line=line,
+            trip_id="t",
+            arrival_time=int(when.timestamp()),
+            branch_known=False,
+        )
+    ]
+    return live
+
+
+def test_a_bus_of_unknown_branch_says_so(client_live):
+    live = live_unsure("152", at(TUESDAY, 8, 3))
+
+    html = (
+        client_live(at(TUESDAY, 8), live)
+        .get(f"/partials/stops/{PLAZA_ITALIA}/arrivals")
+        .text
+    )
+
+    assert (
+        '<strong>152</strong> <span class="unsure">ramal sin confirmar</span>' in html
+    )
+    # And the 152A keeps its schedule
+    assert "<strong>152A</strong> a Olivos" in html
+
+
+def test_a_bus_of_unknown_branch_shows_with_a_branch_of_its_number(client_live):
+    # On the 152A's map, or a favorite 152A: the "152" may be one
+    live = live_unsure("152", at(TUESDAY, 8, 3))
+
+    html = (
+        client_live(at(TUESDAY, 8), live)
+        .get(f"/partials/stops/{PLAZA_ITALIA}/arrivals?line=152A")
+        .text
+    )
+
+    assert "ramal sin confirmar" in html
+
+
+def test_a_bus_of_unknown_branch_stays_out_of_other_numbers(client_live):
+    live = live_unsure("15", at(TUESDAY, 8, 3))
+
+    html = (
+        client_live(at(TUESDAY, 8), live)
+        .get(f"/partials/stops/{PLAZA_ITALIA}/arrivals?line=152A")
+        .text
+    )
+
+    # "15" is not "152": the number is compared whole
+    assert "ramal sin confirmar" not in html
+
+
+def test_a_bus_of_unknown_branch_has_no_favorite_star(client_live):
+    # A favorite is a line and a direction: "152" is neither
+    live = live_unsure("152", at(TUESDAY, 8, 3))
+
+    html = (
+        client_live(at(TUESDAY, 8), live)
+        .get(f"/partials/stops/{PLAZA_ITALIA}/arrivals")
+        .text
+    )
+
+    assert 'data-line="152"' not in html

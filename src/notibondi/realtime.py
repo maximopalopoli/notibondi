@@ -36,25 +36,40 @@ class Vehicle:
 
 @dataclass(frozen=True)
 class LiveArrival:
-    line: str  # resolved by stops, e.g. "108A"
+    line: str  # resolved by stops, e.g. "108A"; only the number ("152") if not
     trip_id: str  # only meaningful inside the feed
     arrival_time: int  # Unix seconds
+    # False: a bus of this number, of a branch we can't tell (see build_index)
+    branch_known: bool = True
 
 
 def build_index(
     feed: gtfs_realtime_pb2.FeedMessage,
     lines_by_stop: dict[str, set[str]],
     names: dict[str, str] | None = None,
-) -> tuple[dict[str, list[LiveArrival]], dict[str, str]]:
-    """Map each stop_id to its live arrivals, sorted by time."""
+) -> tuple[dict[str, list[LiveArrival]], dict[str, str], dict[str, str]]:
+    """Map each stop_id to its live arrivals, sorted by time.
 
-    lines = resolve_lines(collect_stops_by_route(feed), lines_by_stop, names)
+    Also returns the line of each live route_id (resolve_lines) and the
+    number of the ones of an unknown branch (unknown_branches). Those buses
+    come to the stops of any branch of their number as "152", with
+    branch_known false. Not as the only branch that stops there: the name
+    may be of a branch the GTFS doesn't have ("21 R Fca Ford").
+    """
+    stops_by_route = collect_stops_by_route(feed)
+    names = names or {}
+    lines = resolve_lines(stops_by_route, lines_by_stop, names)
+    static_lines = {line for lines in lines_by_stop.values() for line in lines}
+    unknown = unknown_branches(
+        names, lines, static_lines, stops_by_route, lines_by_stop
+    )
     index: dict[str, list[LiveArrival]] = defaultdict(list)
 
     for entity in feed.entity:
         trip = entity.trip_update.trip
         line = lines.get(trip.route_id)
-        if line is None:
+        number = unknown.get(trip.route_id)
+        if line is None and number is None:
             continue
 
         for update in entity.trip_update.stop_time_update:
@@ -63,17 +78,24 @@ def build_index(
             if abs(update.arrival.delay) > MAX_DELAY_SECONDS:
                 continue
 
+            if line is None and not any(
+                line_number(candidate) == number
+                for candidate in lines_by_stop.get(update.stop_id, set())
+            ):
+                continue
+
             arrival = LiveArrival(
-                line=line,
+                line=line or number,
                 trip_id=trip.trip_id,
                 arrival_time=update.arrival.time,
+                branch_known=line is not None,
             )
             index[update.stop_id].append(arrival)
 
     for arrivals in index.values():
         arrivals.sort(key=lambda a: a.arrival_time)
 
-    return dict(index), lines
+    return dict(index), lines, unknown
 
 
 def group_vehicles(
@@ -242,20 +264,47 @@ def line_number(line: str) -> str | None:
     return match[0] if match else None
 
 
-def unknown_branches(
-    names: dict[str, str], lines: dict[str, str], static_lines: set[str]
-) -> dict[str, str]:
-    """The line number of each named route_id that resolve_lines left out.
+def _number_by_stops(stops: set[str], lines_by_stop: dict[str, set[str]]) -> str | None:
+    """The number of a route_id whose stops tie between branches of it only
+    (65A and 65B with 54 votes each): it's a 65, whatever the branch."""
+    votes = Counter()
+    for stop_id in stops:
+        votes.update(lines_by_stop.get(stop_id, set()))
+    if not votes:
+        return None
+    top = max(votes.values())
+    numbers = {line_number(line) for line, n in votes.items() if n == top}
+    if len(numbers) == 1 and top >= MIN_SHARE * len(stops):
+        return numbers.pop()
+    return None
 
-    Most of them are lines the GTFS has with a branch we can't tell ("152",
-    "133 Pte. Saavedra"), so the map shows them on every branch of the line.
+
+def unknown_branches(
+    names: dict[str, str],
+    lines: dict[str, str],
+    static_lines: set[str],
+    stops_by_route: dict[str, set[str]] | None = None,
+    lines_by_stop: dict[str, set[str]] | None = None,
+) -> dict[str, str]:
+    """The line number of each route_id that resolve_lines left out, when
+    the number is clear but the branch isn't.
+
+    Most of them are named ("152", "133 Pte. Saavedra"); the others have no
+    name and tie between branches of one number. The map shows them on every
+    branch of the line, and build_index at the stops of those branches.
     Numbers the GTFS doesn't have (239, 507) have no page to show them on.
     """
+    stops_by_route = stops_by_route or {}
     numbers = {line_number(line) for line in static_lines}
     result = {}
-    for route_id, name in names.items():
-        number = line_number(name)
-        if route_id not in lines and number is not None and number in numbers:
+    for route_id in names.keys() | stops_by_route.keys():
+        if route_id in lines:
+            continue
+        if route_id in names:
+            number = line_number(names[route_id])
+        else:
+            number = _number_by_stops(stops_by_route[route_id], lines_by_stop or {})
+        if number is not None and number in numbers:
             result[route_id] = number
     return result
 
@@ -383,6 +432,7 @@ def merge_arrivals(
                 direction_id=getattr(
                     scheduled_by_line.get(a.line), "direction_id", None
                 ),
+                branch_known=a.branch_known,
             )
         )
 

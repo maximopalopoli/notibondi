@@ -25,7 +25,6 @@ from notibondi.realtime import (
     line_number,
     resolve_directions,
     routes_by_stop,
-    unknown_branches,
 )
 from notibondi.schedules import now
 
@@ -73,7 +72,7 @@ class LiveFeed:
     vehicles: dict[str, list[Vehicle]] = field(default_factory=dict)
     vehicles_at: float | None = None  # time.monotonic() of the last good positions
     lines: dict[str, str] = field(default_factory=dict)
-    # Named route_ids without a line, by line number (see unknown_branches)
+    # Route_ids without a line, by line number (see unknown_branches)
     unknown_branch: dict[str, str] = field(default_factory=dict)
     # Every name seen, by live route_id (see fetch_route_names). It starts
     # with the saved ones, so it doesn't wait for the first download.
@@ -167,14 +166,14 @@ async def refresh_forever(
     directions_by_stop: dict[str, set[tuple[str, int]]] | None = None,
 ):
     directions_by_stop = directions_by_stop or {}
-    static_lines = {line for lines in lines_by_stop.values() for line in lines}
 
     async def refresh():
         feed = await fetch_trip_updates(client, settings)
         names = live.route_names
-        index, lines = await asyncio.to_thread(build_index, feed, lines_by_stop, names)
+        index, lines, unknown = await asyncio.to_thread(
+            build_index, feed, lines_by_stop, names
+        )
         by_stop = await asyncio.to_thread(routes_by_stop, feed)
-        unknown = unknown_branches(names, lines, static_lines)
         directions = await asyncio.to_thread(
             lambda: resolve_directions(
                 collect_stops_by_route(feed), directions_by_stop, lines, unknown

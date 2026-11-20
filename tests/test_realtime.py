@@ -71,6 +71,34 @@ def test_unknown_branches_leaves_out_numbers_the_gtfs_does_not_have():
     assert unknown_branches(names, {}, {"152A"}) == {}
 
 
+def test_unknown_branches_takes_an_unnamed_tie_between_branches_of_one_number():
+    # 152A and 152B go through A and both get 1 vote: it's a 152
+    stops = {"91": {"A"}}
+
+    result = unknown_branches({}, {}, {"152A", "152B"}, stops, BRANCHES)
+
+    assert result == {"91": "152"}
+
+
+def test_unknown_branches_leaves_out_a_tie_between_two_numbers():
+    lines_by_stop = {"A": {"152A", "60"}}
+
+    assert unknown_branches({}, {}, {"152A", "60"}, {"91": {"A"}}, lines_by_stop) == {}
+
+
+def test_unknown_branches_leaves_out_a_tie_below_half_of_the_stops():
+    # 1 vote each of 3 stops: X and Y are on no line
+    stops = {"91": {"A", "X", "Y"}}
+
+    assert unknown_branches({}, {}, {"152A", "152B"}, stops, BRANCHES) == {}
+
+
+def test_unknown_branches_leaves_out_an_unnamed_route_with_a_line():
+    stops = {"91": {"A"}}
+
+    assert unknown_branches({}, {"91": "152A"}, {"152A"}, stops, BRANCHES) == {}
+
+
 # load_route_names and save_route_names
 
 
@@ -402,7 +430,7 @@ def test_build_index_gives_arrivals_for_a_known_stop(feed_205):
     stops = collect_stops_by_route(feed_205)["205"]
     lines_by_stop = {stop: {"108A"} for stop in stops}
 
-    index, _ = build_index(feed_205, lines_by_stop)
+    index, _, _ = build_index(feed_205, lines_by_stop)
 
     # 20724 is the stop with the most arrivals in the sample.
     arrivals = index["20724"]
@@ -415,7 +443,7 @@ def test_build_index_has_an_entry_for_every_stop_with_an_arrival(feed_205):
     stops = collect_stops_by_route(feed_205)["205"]
     lines_by_stop = {stop: {"108A"} for stop in stops}
 
-    index, _ = build_index(feed_205, lines_by_stop)
+    index, _, _ = build_index(feed_205, lines_by_stop)
 
     assert set(index) == stops
 
@@ -427,7 +455,7 @@ def test_build_index_sorts_each_stop_by_arrival_time():
         ("1", "middle", [("A", 1500, 0)]),
     )
 
-    index, _ = build_index(feed, {"A": {"60"}})
+    index, _, _ = build_index(feed, {"A": {"60"}})
 
     assert [a.trip_id for a in index["A"]] == ["early", "middle", "late"]
 
@@ -435,7 +463,7 @@ def test_build_index_sorts_each_stop_by_arrival_time():
 def test_build_index_stores_line_trip_and_absolute_time():
     feed = make_feed(("1", "t1", [("A", 1794492430, 120)]))
 
-    index, _ = build_index(feed, {"A": {"60"}})
+    index, _, _ = build_index(feed, {"A": {"60"}})
 
     assert index == {
         "A": [LiveArrival(line="60", trip_id="t1", arrival_time=1794492430)]
@@ -445,7 +473,7 @@ def test_build_index_stores_line_trip_and_absolute_time():
 def test_build_index_skips_stops_without_arrival():
     feed = make_feed(("1", "t1", [("A", 1000, 0), ("B", 1100, 0), "S00098641"]))
 
-    index, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
+    index, _, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
 
     assert "S00098641" not in index
     assert set(index) == {"A", "B"}
@@ -457,7 +485,7 @@ def test_build_index_skips_the_midnight_delay_bug():
         ("1", "bug", [("A", 900, 84_500), ("B", 950, -84_500)]),
     )
 
-    index, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
+    index, _, _ = build_index(feed, {"A": {"60"}, "B": {"60"}})
 
     assert [a.trip_id for a in index["A"]] == ["ok"]
     assert [a.trip_id for a in index["B"]] == ["ok"]
@@ -466,7 +494,7 @@ def test_build_index_skips_the_midnight_delay_bug():
 def test_build_index_keeps_a_delay_right_at_the_limit():
     feed = make_feed(("1", "t1", [("A", 1000, MAX_DELAY_SECONDS)]))
 
-    index, _ = build_index(feed, {"A": {"60"}})
+    index, _, _ = build_index(feed, {"A": {"60"}})
 
     assert "A" in index
 
@@ -480,20 +508,20 @@ def test_build_index_skips_routes_without_a_resolved_line():
     # Route 2: 60 and 152A get 1 vote each (X is on no line), a tie, so no line.
     lines_by_stop = {"A": {"60", "152A"}, "B": {"60"}, "X": set()}
 
-    index, _ = build_index(feed, lines_by_stop)
+    index, _, _ = build_index(feed, lines_by_stop)
 
     assert [a.trip_id for a in index["A"]] == ["known"]
     assert "X" not in index
 
 
 def test_build_index_of_an_empty_feed_is_empty():
-    assert build_index(make_feed(), {"A": {"60"}}) == ({}, {})
+    assert build_index(make_feed(), {"A": {"60"}}) == ({}, {}, {})
 
 
 def test_build_index_uses_the_names():
     feed = make_feed(("834", "t1", [("A", 1_000, 0)]))
 
-    index, lines = build_index(feed, BRANCHES, {"834": "152B"})
+    index, lines, _ = build_index(feed, BRANCHES, {"834": "152B"})
 
     assert lines == {"834": "152B"}
     assert [a.line for a in index["A"]] == ["152B"]
@@ -503,9 +531,60 @@ def test_build_index_also_returns_the_resolved_lines(feed_205):
     stops = collect_stops_by_route(feed_205)["205"]
     lines_by_stop = {stop: {"108A"} for stop in stops}
 
-    _, lines = build_index(feed_205, lines_by_stop)
+    _, lines, _ = build_index(feed_205, lines_by_stop)
 
     assert lines == {"205": "108A"}
+
+
+def test_build_index_brings_a_bus_of_unknown_branch_to_the_stops():
+    # The GCBA calls it "152", and both branches stop at A
+    feed = make_feed(("834", "t1", [("A", 1_000, 0), ("B", 1_100, 0)]))
+    branches = {**BRANCHES, "B": {"152A", "152B"}}
+
+    index, lines, unknown = build_index(feed, branches, {"834": "152"})
+
+    assert lines == {}
+    assert unknown == {"834": "152"}
+    assert index["A"] == [
+        LiveArrival(line="152", trip_id="t1", arrival_time=1_000, branch_known=False)
+    ]
+
+
+def test_build_index_does_not_guess_the_branch_where_only_one_stops():
+    # B is 152A only and C is 152B only, so the stops tie. At B the bus may
+    # still be of a branch the GTFS doesn't have: "152", not "152A"
+    feed = make_feed(("834", "t1", [("B", 1_000, 0), ("C", 1_100, 0)]))
+
+    index, _, _ = build_index(feed, BRANCHES, {"834": "152"})
+
+    assert [(a.line, a.branch_known) for a in index["B"]] == [("152", False)]
+
+
+def test_build_index_leaves_a_bus_of_unknown_branch_out_of_other_stops():
+    # D is a 60 stop only: no 152 stops there
+    feed = make_feed(("834", "t1", [("A", 1_000, 0), ("D", 1_100, 0)]))
+    branches = {**BRANCHES, "B": {"152A", "152B"}}
+
+    index, _, _ = build_index(feed, branches, {"834": "152"})
+
+    assert set(index) == {"A"}
+
+
+def test_build_index_brings_an_unnamed_tie_to_the_stops():
+    feed = make_feed(("91", "t1", [("A", 1_000, 0)]))
+
+    index, _, unknown = build_index(feed, BRANCHES)
+
+    assert unknown == {"91": "152"}
+    assert [(a.line, a.branch_known) for a in index["A"]] == [("152", False)]
+
+
+def test_build_index_marks_a_known_line_as_known():
+    feed = make_feed(("1", "t1", [("A", 1_000, 0)]))
+
+    index, _, _ = build_index(feed, {"A": {"60"}})
+
+    assert index["A"][0].branch_known
 
 
 # merge_arrivals
@@ -663,6 +742,29 @@ def test_merge_keeps_the_first_three_of_each_line():
         ("60", 20),
         ("60", 30),
         ("60", 40),
+    ]
+
+
+def test_merge_keeps_a_bus_of_unknown_branch_apart():
+    # A "152" may be the 152A or not: the 152A keeps its schedule
+    unsure = LiveArrival(
+        line="152",
+        trip_id="t",
+        arrival_time=int(AT.timestamp() + 4 * 60),
+        branch_known=False,
+    )
+
+    merged = merge_arrivals([unsure], [sched("152A", 9, "a Olivos")], AT)
+
+    assert merged == [
+        Arrival(
+            line="152",
+            headsign="",
+            minutes=4,
+            source="realtime",
+            branch_known=False,
+        ),
+        Arrival(line="152A", headsign="a Olivos", minutes=9),
     ]
 
 

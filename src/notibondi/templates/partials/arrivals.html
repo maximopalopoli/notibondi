@@ -19,7 +19,7 @@
                 aria-label="Línea favorita: {{ a.line }} {{ a.headsign }}"
                 data-line="{{ a.line }}" data-direction="{{ a.direction_id }}">☆</button>
         {%- endif %}
-        <strong>{{ a.line }}</strong> {{ a.headsign }}</span>
+        <strong>{{ a.line }}</strong> {% if a.branch_known %}{{ a.headsign }}{% else %}<span class="unsure">ramal sin confirmar</span>{% endif %}</span>
       <span class="tag tag-{{ a.source }}">{% if a.source == "realtime" %}en vivo{% else %}programado{% endif %}</span>
       <span class="minutes">{% if a.minutes == 0 %}llegando{% else %}{{ a.minutes }} min{% endif %}</span>
       {% if leave is not none %}
