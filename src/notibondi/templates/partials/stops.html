@@ -1,17 +1,56 @@
 {% if place %}<p class="place">Paradas cerca de <strong>{{ place }}</strong></p>{% endif %}
-{# The point the distances are measured from, and each stop's position: home.js draws them #}
+{% if note %}<p class="note">{{ note }}</p>{% endif %}
+{# The point the distances are measured from, and each stop's position: stops_map.js draws them #}
 <ul class="stops"{% if origin %} data-origin-lat="{{ origin[0] }}" data-origin-lon="{{ origin[1] }}"{% endif %}>
   {% for stop in stops %}
+  {% if loop.index0 == first_farther %}
+  {# No data-stop-id: the map and the scripts skip it #}
+  <li class="farther" role="presentation">Más lejos, otras líneas</li>
+  {% endif %}
   <li data-stop-id="{{ stop.stop_id }}"{% if stop.lat is defined %} data-lat="{{ stop.lat }}" data-lon="{{ stop.lon }}"{% endif %}>
-    <button type="button" class="stop"
-            hx-get="/partials/stops/{{ stop.stop_id }}/arrivals{% if stop.distance_m is defined %}?distance_m={{ stop.distance_m }}{% endif %}"
+    <button type="button" class="stop" aria-expanded="false"
+            hx-get="/partials/stops/{{ stop.stop_id }}/arrivals{{ query_string(
+              distance_m=stop.distance_m if stop.distance_m is number and stop.distance_m <= MAX_RADIUS_M else none,
+              line=only_line or none) }}"
             hx-target="next .arrivals-slot">
       <strong>{{ stop.stop_name }}</strong>
-      {% if stop.distance_m is defined %}<span class="distance">{{ stop.distance_m }} m</span>{% endif %}
-      <ul class="lines">
-        {% for line in stop.lines %}<li>{{ line }}</li>{% endfor %}
-      </ul>
+      {% if stop.distance_m is number %}<span class="distance">
+        {%- if stop.distance_m < 1000 %}{{ stop.distance_m }} m
+        {%- else %}{{ "%.1f"|format(stop.distance_m / 1000)|replace(".", ",") }} km{% endif -%}
+      </span>{% endif %}
     </button>
+    {# Outside the stop's button: a button can't hold other buttons. With a
+       map (the stops page), tapping a line shows its buses on it #}
+    {# A favorite line's stop (partials/favorite_lines.html) is only about
+       that line: no other lines, and the star is the line's, not the stop's #}
+    {% if not only_line %}
+    <ul class="lines">
+      {% for line in stop.lines %}
+      {% if lines_show_buses %}
+      <li><button type="button" class="line" aria-pressed="false" data-line="{{ line }}"
+                  aria-label="Ver los colectivos de la línea {{ line }} en el mapa">{{ line }}</button></li>
+      {% else %}
+      <li>{{ line }}</li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+    {# favorites.js marks it from what the browser keeps #}
+    <button type="button" class="fav" aria-pressed="false" aria-label="Favorita"
+            data-stop-id="{{ stop.stop_id }}">☆</button>
+    {% endif %}
+    {# Only on /favorites: favorites.js moves it in the list and in the browser #}
+    {% if reorder %}
+    <span class="move">
+      <button type="button" data-move="-1" aria-label="Subir {{ stop.stop_name }}">↑</button>
+      <button type="button" data-move="1" aria-label="Bajar {{ stop.stop_name }}">↓</button>
+    </span>
+    {% endif %}
+    {# Its own panel (ui.js), with a real link for a new tab or no JS #}
+    {% if not only_line %}
+    <a class="open-detail" href="/stops/{{ stop.stop_id }}"
+       data-detail="/partials/stops/{{ stop.stop_id }}/detail{{ query_string(
+         distance_m=stop.distance_m if stop.distance_m is number and stop.distance_m <= MAX_RADIUS_M else none) }}">Ver parada ›</a>
+    {% endif %}
     <div class="arrivals-slot"></div>
   </li>
   {% else %}

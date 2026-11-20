@@ -4,7 +4,14 @@ from pathlib import Path
 
 from google.transit import gtfs_realtime_pb2
 
-from notibondi.realtime import build_index, group_vehicles, unknown_branches
+from notibondi.realtime import (
+    build_index,
+    collect_stops_by_route,
+    group_vehicles,
+    resolve_directions,
+    routes_by_stop,
+    unknown_branches,
+)
 from notibondi.worker import LiveFeed
 
 log = logging.getLogger(__name__)
@@ -13,7 +20,11 @@ log = logging.getLogger(__name__)
 FIXTURES_DIR = Path(__file__).parents[2] / "tests" / "fixtures"
 
 
-def load_fixtures(live: LiveFeed, lines_by_stop: dict[str, set[str]]):
+def load_fixtures(
+    live: LiveFeed,
+    lines_by_stop: dict[str, set[str]],
+    directions_by_stop: dict[str, set[tuple[str, int]]] | None = None,
+):
     static_lines = {line for lines in lines_by_stop.values() for line in lines}
 
     feed = read_trip_updates()
@@ -24,6 +35,10 @@ def load_fixtures(live: LiveFeed, lines_by_stop: dict[str, set[str]]):
     live.index = index
     live.lines = lines
     live.unknown_branch = unknown
+    live.routes_by_stop = routes_by_stop(feed)
+    live.directions = resolve_directions(
+        collect_stops_by_route(feed), directions_by_stop or {}, lines, unknown
+    )
     live.fetched_at = time.monotonic()
     log.info("feed refreshed: %d stops", len(index))
 

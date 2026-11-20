@@ -36,11 +36,16 @@ from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
     MAX_RADIUS_M,
     MAX_SEARCH_LIMIT,
+    FavoriteStop,
     NearbyStop,
     Stop,
+    favorite_lines,
+    favorite_stops,
+    find_farther_line_stops,
     find_nearby_stops,
     search_stops,
     stop_exists,
+    stop_line_paths,
     stop_lines,
 )
 from notibondi.walk import leave_in, walk_minutes
@@ -130,14 +135,31 @@ GeocoderDep = Annotated[Geocoder, Depends(get_geocoder)]
 
 
 def arrivals_for(
-    conn: Connection, live: LiveFeed, stop_id: str, at: datetime
+    conn: Connection,
+    live: LiveFeed,
+    stop_id: str,
+    at: datetime,
+    line: str | None = None,
 ) -> list[Arrival]:
     """Live arrivals mixed with the schedule, or only the schedule if the
-    feed is degraded (no good download yet, or older than 5 minutes)."""
-    scheduled = next_arrivals(conn, stop_id, at)
+    feed is degraded (no good download yet, or older than 5 minutes). Of
+    every line, or only of `line`."""
+    scheduled = next_arrivals(conn, stop_id, at, line)
     if feed_health(live).status == "degraded":
         return scheduled
-    return merge_arrivals(live.index.get(stop_id, []), scheduled, at)
+    live_arrivals = [
+        a for a in live.index.get(stop_id, []) if line is None or a.line == line
+    ]
+    return merge_arrivals(live_arrivals, scheduled, at)
+
+
+def query_string(**params) -> str:
+    """ "?a=1&b=2" from the params that aren't None, or "" if none is."""
+    kept = {k: v for k, v in params.items() if v is not None}
+    return "?" + urlencode(kept) if kept else ""
+
+
+templates.env.globals["query_string"] = query_string
 
 
 @app.get("/health", response_model=Health)
@@ -160,17 +182,69 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
+@app.get("/stops", response_class=HTMLResponse, include_in_schema=False)
+def stops_page(request: Request):
+    return templates.TemplateResponse(request, "stops.html")
+
+
+def stop_or_404(conn: Connection, stop_id: str) -> FavoriteStop:
+    """A stop with its lines and position, as a favorite has them."""
+    found = favorite_stops(conn, [stop_id])
+    if not found:
+        raise HTTPException(status_code=404, detail="Stop not found")
+    return found[0]
+
+
+@app.get("/stops/{stop_id}", response_class=HTMLResponse, include_in_schema=False)
+def stop_page(request: Request, conn: Conn, stop_id: str):
+    """A stop's own address: the stops page with the stop's panel open, as
+    it looks after tapping "Ver parada" there (ui.js)."""
+    return templates.TemplateResponse(
+        request,
+        "stops.html",
+        {"detail_stop": stop_or_404(conn, stop_id), "distance_m": None},
+    )
+
+
+@app.get(
+    "/partials/stops/{stop_id}/detail",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def stop_detail_partial(
+    request: Request, conn: Conn, stop_id: str, distance_m: DistanceM = None
+):
+    """The panel of a stop, over the page you were on (ui.js opens it)."""
+    return templates.TemplateResponse(
+        request,
+        "partials/stop_detail.html",
+        {"detail_stop": stop_or_404(conn, stop_id), "distance_m": distance_m},
+    )
+
+
+def stops_around(
+    conn, lat: float, lon: float, radius: int
+) -> tuple[list[NearbyStop], int | None]:
+    """The stops within radius, then the nearest stop of each line that has
+    none within radius, and where those farther ones start (None: none)."""
+    near = find_nearby_stops(conn, lat, lon, radius)
+    farther = find_farther_line_stops(conn, lat, lon, radius)
+    return near + farther, (len(near) if farther else None)
+
+
 @app.get("/partials/stops/nearby", response_class=HTMLResponse, include_in_schema=False)
 def nearby_stops_partial(
     request: Request, lat: Lat, lon: Lon, conn: Conn, radius: Radius = 400
 ):
-    stops = find_nearby_stops(conn, lat, lon, radius)
+    stops, first_farther = stops_around(conn, lat, lon, radius)
     return templates.TemplateResponse(
         request,
         "partials/stops.html",
         {
             "stops": stops,
+            "first_farther": first_farther,
             "origin": (lat, lon),
+            "lines_show_buses": True,
             "empty_message": "No hay paradas cerca.",
         },
     )
@@ -229,14 +303,18 @@ async def address_stops_partial(
             "por ejemplo Triunvirato 3424."
         )
     # A sync query from an async route: in a thread, so it doesn't block the loop
-    stops = await run_in_threadpool(find_nearby_stops, conn, place.lat, place.lon, 400)
+    stops, first_farther = await run_in_threadpool(
+        stops_around, conn, place.lat, place.lon, 400
+    )
     return templates.TemplateResponse(
         request,
         "partials/stops.html",
         {
             "stops": stops,
+            "first_farther": first_farther,
             "place": place.label,
             "origin": (place.lat, place.lon),
+            "lines_show_buses": True,
             "empty_message": "No hay paradas cerca de esa dirección.",
         },
     )
@@ -285,11 +363,25 @@ def stop_arrivals_partial(
 
 
 @app.get("/api/v1/stops/{stop_id}/vehicles")
-def stop_vehicles_api(stop_id: str, conn: Conn, live: Live):
-    """The live buses of every line that stops here, for the home map."""
+def stop_vehicles_api(
+    stop_id: str,
+    conn: Conn,
+    live: Live,
+    line: Annotated[str | None, Query(max_length=10)] = None,
+):
+    """The live buses of one line that stops here (the one tapped on the
+    stops page), or of every line without ?line. With ?line, only the ones
+    going the way this stop is: coming to it, or already past it."""
     lines = stop_lines(conn, stop_id)
     if lines is None:
         raise HTTPException(status_code=404, detail="Stop not found")
+    if line is not None:
+        if line not in lines:
+            raise HTTPException(status_code=404, detail="Line doesn't stop here")
+        lines = [line]
+    # Each live route_id goes one way: the ones with arrivals here go this
+    # stop's way. If the feed predicts nothing here, all of them, not a guess.
+    route_ids = (live.routes_by_stop.get(stop_id) or None) if line else None
     at = time.time()
     # A bus of an unknown branch comes once per branch of its number
     features = {}
@@ -311,6 +403,20 @@ LineQ = Annotated[str, Query(pattern=LINE_NAME_PATTERN)]
 @app.get("/api/v1/routes/search", response_model=list[Route])
 def routes_by_query(q: LineQ, conn: Conn):
     return search_routes(conn, q)
+
+
+@app.get("/api/v1/stops/{stop_id}/lines/{line}/geojson")
+def stop_line_paths_api(stop_id: str, line: str, conn: Conn):
+    """The path of a line that stops here, the way it comes to this stop."""
+    lines = stop_lines(conn, stop_id)
+    if lines is None:
+        raise HTTPException(status_code=404, detail="Stop not found")
+    if line not in lines:
+        raise HTTPException(status_code=404, detail="Line doesn't stop here")
+    return JSONResponse(
+        content=stop_line_paths(conn, stop_id, line),
+        media_type="application/geo+json",
+    )
 
 
 @app.get("/api/v1/routes/{route_id}/geojson")

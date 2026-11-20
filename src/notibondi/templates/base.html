@@ -9,6 +9,19 @@
   {% block scripts %}{% endblock %}
 </head>
 <body>
+<header class="top">
+    {# The home page's title is the name; the other pages have their own h1 #}
+    {% block brand %}<a class="brand" href="/">notibondi</a>{% endblock %}
+    {# <details> opens and closes without JS; ui.js only closes it from outside #}
+    <details class="menu">
+      <summary aria-label="Menú">☰</summary>
+      <nav>
+        {% for href, text in [("/", "Inicio"), ("/favorites", "Favoritas"), ("/stops", "Paradas cerca"), ("/routes", "Mapa de líneas")] %}
+        <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ text }}</a>
+        {% endfor %}
+      </nav>
+    </details>
+  </header>
   {% block content %}{% endblock %}
 </body>
 </html>

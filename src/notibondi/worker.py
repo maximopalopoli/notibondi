@@ -22,6 +22,8 @@ from notibondi.realtime import (
     build_index,
     group_vehicles,
     line_number,
+    resolve_directions,
+    routes_by_stop,
     unknown_branches,
 )
 from notibondi.schedules import now
@@ -149,19 +151,29 @@ async def refresh_forever(
     client: AsyncClient,
     settings: Settings,
     lines_by_stop: dict[str, set[str]],
+    directions_by_stop: dict[str, set[tuple[str, int]]] | None = None,
 ):
+    directions_by_stop = directions_by_stop or {}
     static_lines = {line for lines in lines_by_stop.values() for line in lines}
 
     async def refresh():
         feed = await fetch_trip_updates(client, settings)
         names = live.route_names
         index, lines = await asyncio.to_thread(build_index, feed, lines_by_stop, names)
+        by_stop = await asyncio.to_thread(routes_by_stop, feed)
         unknown = unknown_branches(names, lines, static_lines)
+        directions = await asyncio.to_thread(
+            lambda: resolve_directions(
+                collect_stops_by_route(feed), directions_by_stop, lines, unknown
+            )
+        )
         # Only reached if everything above worked. Replacing the whole index
         # in one step means readers see the old one or the new one, no lock.
         live.index = index
         live.lines = lines
         live.unknown_branch = unknown
+        live.routes_by_stop = by_stop
+        live.directions = directions
         live.fetched_at = time.monotonic()
         log.info("feed refreshed: %d stops", len(index))
 

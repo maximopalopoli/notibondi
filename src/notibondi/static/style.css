@@ -5,6 +5,71 @@ body {
   padding: 1rem;
 }
 
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+
+.brand {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu summary {
+  list-style: none; /* no triangle */
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  /* big enough for a finger */
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+}
+
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu[open] summary {
+  background: #eee;
+}
+
+.menu nav {
+  position: absolute;
+  right: 0;
+  z-index: 10; /* over the map */
+  min-width: 12rem;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 0.25rem;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+
+.menu nav a {
+  display: block;
+  padding: 0.75rem 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The page you're on */
+.menu nav a[aria-current="page"] {
+  font-weight: bold;
+}
+
+.menu nav a:hover,
+.menu nav a:focus-visible {
+  background: #f3f4f6;
+}
+
 .stops {
   list-style: none;
   padding: 0;
@@ -15,26 +80,56 @@ body {
   border-bottom: 1px solid #ddd;
 }
 
+/* "Más lejos, otras líneas": the stops after it are for lines with no stop near */
+.stops > li.farther {
+  padding: 1rem 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: bold;
+  color: #666;
+}
+
 .distance {
   color: #666;
   white-space: nowrap;
 }
 
 .lines {
-  flex-basis: 100%;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.35rem;
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: -0.4rem 0 0.75rem;
 }
 
-.lines li {
+/* Plain text (name search) or a button (stops page, with the map) */
+.lines > li:not(:has(button)),
+.lines button {
   background: #eee;
   border-radius: 0.25rem;
   padding: 0.1rem 0.4rem;
   font-size: 0.9rem;
+}
+
+.lines button {
+  font: inherit;
+  font-size: 0.9rem;
+  color: inherit;
+  border: 2px solid transparent;
+  padding: 0.15rem 0.55rem;
+  cursor: pointer;
+}
+
+/* Its buses are on the map: the same yellow as the buses */
+.lines button[aria-pressed="true"] {
+  background: #facc15;
+  border-color: #000;
+  font-weight: bold;
+}
+
+.lines button:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
 }
 
 .error {
@@ -82,22 +177,46 @@ body {
   margin: 0;
 }
 
-.minutes {
-  float: right;
-  font-weight: bold;
+/* Each arrival:   59B R2 x Bº Golf a Estación BsAs      6 min
+                   Salí en 5 min                         en vivo */
+.arrivals li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.3rem 0;
 }
 
-.tag {
-  font-size: 0.75rem;
-  padding: 0 0.35rem;
-  border-radius: 0.25rem;
-  color: #666;
-  background: #eee;
+.arrivals li > .what {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.minutes {
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: bold;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .leave {
-  display: block;
+  grid-column: 1;
+  grid-row: 2;
   font-size: 0.875rem;
+}
+
+.tag {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  white-space: nowrap;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  padding: 0 0.3rem;
+  border-radius: 0.25rem;
+  color: #666;
+  background: #eee;
 }
 
 /* A bus you can't walk to in time: still listed, so the list doesn't jump */
@@ -114,7 +233,13 @@ body {
   height: 70vh;
 }
 
-#home-map {
+#lines-map {
+  height: 60vh;
+  min-height: 15rem;
+  margin: 1rem 0 0;
+}
+
+#stops-map {
   height: 40vh;
   min-height: 15rem;
   margin: 0 0 1rem;
@@ -123,4 +248,177 @@ body {
 /* The stop opened from the list or the map */
 .stops > li.selected > .stop strong {
   color: #1a73e8;
+}
+
+/* "Seleccioná la línea" and "O escribí el número", one under the other */
+label[for="line-select"],
+label[for="search"] {
+  display: block;
+}
+
+#line-select {
+  display: block;
+  margin: 0 0 0.75rem;
+}
+
+/* The branch drawn on the "Mapa de líneas" map */
+.branches a[aria-current] {
+  font-weight: bold;
+}
+
+/* The ☆ of each stop, in the top right corner */
+.stops > li {
+  position: relative;
+}
+
+.stops > li > .stop {
+  padding-right: 2.75rem;
+}
+
+.fav {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: #999;
+}
+
+.stops > li > .fav {
+  position: absolute;
+  top: 0.35rem;
+  right: 0;
+}
+
+.fav[aria-pressed="true"] {
+  color: #e6a700;
+}
+
+/* A favorite line: its name and direction over its nearest stop */
+.favorite-lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.favorite-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0.5rem 0 0;
+}
+
+.favorite-line + .stops {
+  margin-top: 0;
+}
+
+/* On the lines map, one star per direction of the branch: the star is
+   colored, the destination stays readable */
+.branches .fav {
+  display: block;
+  font-size: 0.95rem;
+  padding: 0.3rem 0;
+  color: inherit;
+  text-align: left;
+}
+
+.branches .fav::first-letter {
+  color: #999;
+  font-size: 1.25rem;
+}
+
+.branches .fav[aria-pressed="true"]::first-letter {
+  color: #e6a700;
+}
+
+/* In an arrival, a small star before its line, once per line and direction */
+.arrivals .fav {
+  font-size: 1.1rem;
+  padding: 0 0.3rem 0 0;
+}
+
+/* ↑ ↓ on /favorites, under the stop or the line */
+.move {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.move button {
+  min-width: 2.75rem;
+  min-height: 2.25rem;
+  font-size: 1.1rem;
+  border: 1px solid #ccc;
+  border-radius: 0.4rem;
+  background: none;
+  cursor: pointer;
+}
+
+.note {
+  color: #666;
+}
+
+/* A stop's panel: a bottom sheet on a phone, a side panel on a computer */
+.detail {
+  position: fixed;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 75vh;
+  overflow-y: auto;
+  padding: 0.75rem 1rem 1.5rem;
+  background: #fff;
+  border-radius: 0.9rem 0.9rem 0 0;
+  box-shadow: 0 -0.25rem 1.5rem rgb(0 0 0 / 25%);
+}
+
+.detail[hidden] {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .detail {
+    left: auto;
+    top: 0;
+    width: 24rem;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: -0.25rem 0 1.5rem rgb(0 0 0 / 25%);
+  }
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.detail-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.detail-close {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  font-size: 1.6rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.updated {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.open-detail {
+  display: inline-block;
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
 }

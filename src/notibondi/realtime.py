@@ -110,6 +110,22 @@ def collect_stops_by_route(
     return dict(result)
 
 
+def routes_by_stop(feed: gtfs_realtime_pb2.FeedMessage) -> dict[str, set[str]]:
+    """The live route_ids with arrivals at each stop.
+
+    A live route_id is one line in one direction (205 is the 108 to Liniers,
+    206 back to Retiro), so these are the route_ids going this stop's way.
+    The feed's direction_id doesn't say that: each route_id always sends the
+    same one, and in 15 of 43 branches checked on 2026-11-19 it's the
+    opposite of the GTFS direction_id.
+    """
+    result: dict[str, set[str]] = defaultdict(set)
+    for route_id, stops in collect_stops_by_route(feed).items():
+        for stop_id in stops:
+            result[stop_id].add(route_id)
+    return dict(result)
+
+
 def branches_by_name(lines: set[str]) -> dict[str, set[str]]:
     """What a name without the branch letter can mean: {"152": {"152A", "152B"}}."""
     result: dict[str, set[str]] = defaultdict(set)
