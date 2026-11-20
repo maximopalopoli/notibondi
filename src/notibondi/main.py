@@ -39,6 +39,7 @@ from notibondi.routes import (
     search_routes,
 )
 from notibondi.schedules import Arrival, next_arrivals, now
+from notibondi.static_url import StaticUrl
 from notibondi.stops import (
     MAX_FAVORITES,
     MAX_RADIUS_M,
@@ -132,6 +133,8 @@ DistanceM = Annotated[int | None, Query(ge=0, le=MAX_RADIUS_M)]
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+# Every static file with ?v=<hash of its content>, so a deploy is never stale
+templates.env.globals["static_url"] = StaticUrl(BASE_DIR / "static")
 # The arrivals only take a distance up to this ("Salí en" is for walking)
 templates.env.globals["MAX_RADIUS_M"] = MAX_RADIUS_M
 

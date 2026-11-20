@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
 {% block scripts %}
-<link rel="stylesheet" href="{{ url_for('static', path='maplibre-gl.css') }}">
-<script src="{{ url_for('static', path='maplibre-gl.js') }}" defer></script>
-<script src="{{ url_for('static', path='location.js') }}" defer></script>
-<script src="{{ url_for('static', path='route_layers.js') }}" defer></script>
-<script src="{{ url_for('static', path='stops_map.js') }}" defer></script>
+<link rel="stylesheet" href="{{ static_url('maplibre-gl.css') }}">
+<script src="{{ static_url('maplibre-gl.js') }}" defer></script>
+<script src="{{ static_url('location.js') }}" defer></script>
+<script src="{{ static_url('route_layers.js') }}" defer></script>
+<script src="{{ static_url('stops_map.js') }}" defer></script>
 {% endblock %}
 
 {% block title %}Paradas cerca · notibondi{% endblock %}

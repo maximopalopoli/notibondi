@@ -3,11 +3,11 @@
 {% block title %}Mapa de líneas · notibondi{% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="{{ url_for('static', path='maplibre-gl.css') }}">
-<script src="{{ url_for('static', path='maplibre-gl.js') }}" defer></script>
-<script src="{{ url_for('static', path='route_layers.js') }}" defer></script>
-<script src="{{ url_for('static', path='lines_map.js') }}" defer></script>
-<script src="{{ url_for('static', path='line_select.js') }}" defer></script>
+<link rel="stylesheet" href="{{ static_url('maplibre-gl.css') }}">
+<script src="{{ static_url('maplibre-gl.js') }}" defer></script>
+<script src="{{ static_url('route_layers.js') }}" defer></script>
+<script src="{{ static_url('lines_map.js') }}" defer></script>
+<script src="{{ static_url('line_select.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
