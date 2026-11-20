@@ -75,3 +75,45 @@ def test_the_panel_has_its_own_history_not_htmxs():
 
     assert "history.pushState" in js
     assert "popstate" in js
+
+
+# Opened from a line's map: only that line
+
+
+def test_the_stops_of_a_line_map_know_their_line(client):
+    # route_layers.js passes it to the panel when a stop is tapped
+    features = client.get("/api/v1/routes/1001/geojson").json()["features"]
+    stops = [f for f in features if f["geometry"]["type"] == "Point"]
+
+    assert {s["properties"]["line"] for s in stops} == {"152A"}
+
+
+def test_the_panel_of_one_line_shows_only_its_arrivals(client):
+    html = client.get(
+        f"/partials/stops/{PLAZA_ITALIA}/detail", params={"line": "152A"}
+    ).text
+
+    assert f'hx-get="/partials/stops/{PLAZA_ITALIA}/arrivals?line=152A"' in html
+    # Its chip says which line the list is of; the others stay plain
+    assert '<li class="current">152A</li>' in html
+    assert "<li>505R3</li>" in html
+
+
+def test_the_stops_address_keeps_the_line(client):
+    # A reload of /stops/{id}?line=... opens the same panel
+    html = client.get(f"/stops/{PLAZA_ITALIA}", params={"line": "152A"}).text
+
+    assert f"/partials/stops/{PLAZA_ITALIA}/arrivals?line=152A" in html
+
+
+def test_the_panel_without_a_line_has_every_line(client):
+    html = client.get(f"/stops/{PLAZA_ITALIA}").text
+
+    assert f'hx-get="/partials/stops/{PLAZA_ITALIA}/arrivals"' in html
+    assert 'class="current"' not in html
+
+
+def test_the_panels_line_must_be_a_line_name(client):
+    url = f"/partials/stops/{PLAZA_ITALIA}/detail"
+
+    assert client.get(url, params={"line": "<b>"}).status_code == 422

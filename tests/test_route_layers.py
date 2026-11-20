@@ -100,3 +100,48 @@ def test_the_base_map_is_quieter_than_light():
 def test_shops_and_cafes_wait_for_street_zoom_but_stations_dont():
     assert '["==", ["get", "kind"], "station"]' in BASEMAP
     assert '[">=", ["zoom"], 16]' in BASEMAP
+
+
+# Tapping a stop
+
+UI = (STATIC / "ui.js").read_text()
+
+
+def test_tapping_a_stop_on_a_line_map_opens_its_panel():
+    tap = ROUTE_LAYERS[ROUTE_LAYERS.index("function tapStops") :]
+
+    assert 'map.on("click"' in tap
+    assert "openStop(stop.properties.stop_id, stop.properties.line" in tap
+
+
+def test_a_tap_near_a_stop_is_enough():
+    # A 4 px circle is too small for a finger: a box around the tap
+    near = ROUTE_LAYERS[ROUTE_LAYERS.index("function nearestStop") :]
+
+    assert 'queryRenderedFeatures(box, { layers: ["route-stops"] })' in near
+
+
+def test_the_map_and_the_links_open_the_panel_the_same_way():
+    # One openDetail: same history, same focus, same Back
+    assert "function openStop(stopId, line, from)" in UI
+    assert (
+        "openDetail(`/stops/${id}${query}`, `/partials/stops/${id}/detail${query}`, from)"
+        in UI
+    )
+    assert 'openDetail(link.getAttribute("href"), link.dataset.detail, link)' in UI
+
+
+def test_the_urls_openstop_builds_exist(client):
+    # The two addresses ui.js builds for a stop of the 108A
+    stop_id = client.get("/api/v1/routes/1001/geojson").json()["features"][-1][
+        "properties"
+    ]["stop_id"]
+
+    assert client.get(f"/stops/{stop_id}").status_code == 200
+    assert client.get(f"/partials/stops/{stop_id}/detail").status_code == 200
+
+
+def test_ui_js_loads_on_the_line_map_pages(client):
+    # route_layers.js calls openStop, from ui.js
+    for page in ["/routes", "/routes/1001"]:
+        assert "/static/ui.js?v=" in client.get(page).text

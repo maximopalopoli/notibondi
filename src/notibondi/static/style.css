@@ -127,6 +127,12 @@ body {
   font-weight: bold;
 }
 
+/* A stop's panel opened from a line's map: the arrivals are this line's */
+.lines li.current {
+  background: #facc15;
+  font-weight: bold;
+}
+
 .lines button:focus-visible {
   outline: 2px solid #1a73e8;
   outline-offset: 2px;

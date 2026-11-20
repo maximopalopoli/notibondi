@@ -57,18 +57,31 @@ function hideDetail() {
   opener = null;
 }
 
+// url: the stop's own address; panelUrl: the panel's HTML; from: what gets
+// the focus back when it closes
+function openDetail(url, panelUrl, from) {
+  opener = from;
+  htmx.ajax("GET", panelUrl, { target: detail }).then(showDetail);
+  // From one panel to another, replace it: Back goes to the page, not the
+  // panel before
+  if (history.state?.detail) history.replaceState({ detail: url }, "", url);
+  else history.pushState({ detail: url }, "", url);
+}
+
+// A stop tapped on a line's map (route_layers.js), with only that line's
+// arrivals. No distance, since those maps don't know where you are
+function openStop(stopId, line, from) {
+  const id = encodeURIComponent(stopId);
+  const query = line ? `?${new URLSearchParams({ line })}` : "";
+  openDetail(`/stops/${id}${query}`, `/partials/stops/${id}/detail${query}`, from);
+}
+
 document.addEventListener("click", (event) => {
   const link = event.target.closest("a.open-detail[data-detail]");
   // A new tab (ctrl, middle click) follows the real link
   if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
   event.preventDefault();
-  opener = link;
-  htmx.ajax("GET", link.dataset.detail, { target: detail }).then(showDetail);
-  const url = link.getAttribute("href");
-  // From one panel to another, replace it: Back goes to the page, not the
-  // panel before
-  if (history.state?.detail) history.replaceState({ detail: url }, "", url);
-  else history.pushState({ detail: url }, "", url);
+  openDetail(link.getAttribute("href"), link.dataset.detail, link);
 });
 
 function closeDetail() {

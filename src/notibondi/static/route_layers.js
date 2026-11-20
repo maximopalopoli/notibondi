@@ -4,7 +4,7 @@
 // Only one branch at a time: showing another one replaces it.
 //
 // Under the map, the legend of the two directions, which is also a filter:
-// "Ambos", or only one of them.
+// "Ambos", or only one of them. Tapping a stop opens its arrivals (ui.js).
 
 const RouteLayers = (() => {
   // direction 0 is blue, direction 1 is red
@@ -161,6 +161,35 @@ const RouteLayers = (() => {
       if (button) pick(map, button);
     });
     map.getContainer().after(legend);
+
+    tapStops(map);
+  }
+
+  // A stop is a 4 px circle: a finger misses it. Look in a box around the
+  // tap and take the nearest stop, since both directions may have one
+  // across the street. From zoom 13, where the stops show
+  const TAP_PX = 14;
+
+  function nearestStop(map, point) {
+    const box = [
+      [point.x - TAP_PX, point.y - TAP_PX],
+      [point.x + TAP_PX, point.y + TAP_PX],
+    ];
+    const stops = map.queryRenderedFeatures(box, { layers: ["route-stops"] });
+    const distance = (f) => map.project(f.geometry.coordinates).dist(point);
+    return stops.reduce((best, f) => (best && distance(best) <= distance(f) ? best : f), null);
+  }
+
+  function tapStops(map) {
+    map.on("click", (event) => {
+      const stop = nearestStop(map, event.point);
+      // The panel and its address (/stops/{id}) come from ui.js
+      if (stop) openStop(stop.properties.stop_id, stop.properties.line, map.getCanvas());
+    });
+    // On a computer, the hand says the stop can be clicked
+    map.on("mousemove", (event) => {
+      map.getCanvas().style.cursor = nearestStop(map, event.point) ? "pointer" : "";
+    });
   }
 
   // The legend under the map (see add)

@@ -131,6 +131,7 @@ def route_directions(conn: Connection, route_id: str) -> list[Direction]:
 
 def route_geojson(conn: Connection, route_id: str) -> dict:
     directions = route_directions(conn, route_id)
+    route = get_route(conn, route_id) if directions else None
 
     shape_ids = [d.shape_id for d in directions]
 
@@ -177,6 +178,8 @@ def route_geojson(conn: Connection, route_id: str) -> dict:
                         "stop_id": s.stop_id,
                         "stop_name": s.stop_name,
                         "direction_id": d.direction_id,
+                        # Tapping the stop shows only this line's arrivals
+                        "line": route.route_short_name,
                     },
                 }
             )

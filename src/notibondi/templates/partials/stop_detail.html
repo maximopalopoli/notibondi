@@ -9,11 +9,12 @@
 </div>
 {% if detail_stop.lines %}
 <ul class="lines">
-  {% for line in detail_stop.lines %}<li>{{ line }}</li>{% endfor %}
+  {# With ?line, the arrivals are only that line's: its chip says so #}
+  {% for name in detail_stop.lines %}<li{% if name == line %} class="current"{% endif %}>{{ name }}</li>{% endfor %}
 </ul>
 {% endif %}
 <p class="updated" aria-live="polite"></p>
-<div hx-get="/partials/stops/{{ detail_stop.stop_id }}/arrivals{{ query_string(distance_m=distance_m) }}"
+<div hx-get="/partials/stops/{{ detail_stop.stop_id }}/arrivals{{ query_string(distance_m=distance_m, line=line) }}"
      hx-trigger="load" hx-swap="outerHTML">
   <p>Buscando los próximos colectivos…</p>
 </div>

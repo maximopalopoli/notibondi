@@ -242,14 +242,19 @@ def stop_or_404(conn: Connection, stop_id: str) -> FavoriteStop:
     return found[0]
 
 
+# An optional line name in a query string: only letters and digits
+MaybeLine = Annotated[str | None, Query(pattern=LINE_NAME_PATTERN)]
+
+
 @app.get("/stops/{stop_id}", response_class=HTMLResponse, include_in_schema=False)
-def stop_page(request: Request, conn: Conn, stop_id: str):
+def stop_page(request: Request, conn: Conn, stop_id: str, line: MaybeLine = None):
     """A stop's own address: the stops page with the stop's panel open, as
-    it looks after tapping "Ver parada" there (ui.js)."""
+    it looks after tapping "Ver parada" there (ui.js). With ?line, only that
+    line's arrivals, as after tapping the stop on the line's map."""
     return templates.TemplateResponse(
         request,
         "stops.html",
-        {"detail_stop": stop_or_404(conn, stop_id), "distance_m": None},
+        {"detail_stop": stop_or_404(conn, stop_id), "distance_m": None, "line": line},
     )
 
 
@@ -259,13 +264,22 @@ def stop_page(request: Request, conn: Conn, stop_id: str):
     include_in_schema=False,
 )
 def stop_detail_partial(
-    request: Request, conn: Conn, stop_id: str, distance_m: DistanceM = None
+    request: Request,
+    conn: Conn,
+    stop_id: str,
+    distance_m: DistanceM = None,
+    line: MaybeLine = None,
 ):
-    """The panel of a stop, over the page you were on (ui.js opens it)."""
+    """The panel of a stop, over the page you were on (ui.js opens it).
+    With ?line (a stop tapped on a line's map), only that line's arrivals."""
     return templates.TemplateResponse(
         request,
         "partials/stop_detail.html",
-        {"detail_stop": stop_or_404(conn, stop_id), "distance_m": distance_m},
+        {
+            "detail_stop": stop_or_404(conn, stop_id),
+            "distance_m": distance_m,
+            "line": line,
+        },
     )
 
 
@@ -476,7 +490,7 @@ def stop_arrivals_partial(
     live: Live,
     at: Now,
     distance_m: DistanceM = None,
-    line: Annotated[str | None, Query(pattern=LINE_NAME_PATTERN)] = None,
+    line: MaybeLine = None,
 ):
     """The arrivals of a stop; with ?line, only that line's (a favorite line
     on the home page)."""
