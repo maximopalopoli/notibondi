@@ -6,7 +6,7 @@ from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from sqlalchemy import Connection, text
 
-from notibondi.schedules import MAX_ARRIVALS, WINDOW_SECONDS, Arrival
+from notibondi.schedules import WINDOW_SECONDS, Arrival, first_per_line
 
 # Without a name, a live route_id is a static line only if that line goes
 # through at least this share of the route's stops in the feed, and no other
@@ -25,8 +25,9 @@ class Vehicle:
     lon: float
     timestamp: int  # Unix seconds of the position, from the feed
     label: str
-    # 0 or 1, like in the static GTFS. The feed leaves out 0 (its default
-    # value), so a missing direction_id reads as 0.
+    # The feed's own 0 or 1 (a missing one reads as 0, its default value).
+    # It almost always matches the GTFS one (898 of 904 route_ids on
+    # 2026-11-20), but the stops win when they tell: see resolve_directions.
     direction_id: int
 
 
@@ -256,6 +257,53 @@ def unknown_branches(
     return result
 
 
+def resolve_directions(
+    stops_by_route: dict[str, set[str]],
+    directions_by_stop: dict[str, set[tuple[str, int]]],
+    lines: dict[str, str],
+    unknown_branch: dict[str, str],
+) -> dict[str, int]:
+    """The GTFS direction_id of each live route_id with a line or a number.
+
+    A live route_id goes one way, and its stops say which: the direction
+    with most of them wins. It beats the direction_id of the bus positions,
+    which disagreed in 6 of 904 route_ids on 2026-11-20. For an unknown branch ("152"), any branch of
+    the number counts. A tie, or no known stop, leaves the route_id out.
+    """
+    result = {}
+    for route_id, stops in stops_by_route.items():
+        line = lines.get(route_id)
+        number = unknown_branch.get(route_id)
+        if line is None and number is None:
+            continue
+        votes = Counter(
+            direction_id
+            for stop_id in stops
+            for candidate, direction_id in directions_by_stop.get(stop_id, set())
+            if candidate == line or (line is None and line_number(candidate) == number)
+        )
+        winner = _clear_winner(votes)
+        if winner is not None:
+            result[route_id] = winner[0]
+    return result
+
+
+def load_directions_by_stop(conn: Connection) -> dict[str, set[tuple[str, int]]]:
+    """Map each stop_id to the (line name, direction_id) pairs that stop there."""
+    rows = conn.execute(
+        text("""
+            SELECT DISTINCT rs.stop_id, r.route_short_name, rs.direction_id
+            FROM route_stops rs
+            JOIN routes r ON r.route_id = rs.route_id
+        """)
+    )
+
+    result: dict[str, set[tuple[str, int]]] = defaultdict(set)
+    for stop_id, line, direction_id in rows:
+        result[stop_id].add((line, direction_id))
+    return dict(result)
+
+
 def load_lines_by_stop(conn: Connection) -> dict[str, set[str]]:
     """Map each stop_id to the static line names that pass through it."""
     rows = conn.execute(
@@ -307,8 +355,9 @@ def merge_arrivals(
     Lines are matched by name, never by route_id or trip_id. Live arrivals
     already passed or beyond the schedule window are dropped.
     """
-    # The feed has no usable headsign, so borrow the schedule's for that line.
-    headsign_by_line = {a.line: a.headsign for a in scheduled}
+    # The feed has no usable headsign nor direction (its direction_id isn't
+    # the GTFS one), so borrow the schedule's for that line.
+    scheduled_by_line = {a.line: a for a in scheduled}
     now_ts = at.timestamp()
 
     realtime = []
@@ -319,9 +368,12 @@ def merge_arrivals(
         realtime.append(
             Arrival(
                 line=a.line,
-                headsign=headsign_by_line.get(a.line, ""),
+                headsign=getattr(scheduled_by_line.get(a.line), "headsign", ""),
                 minutes=int(seconds_left // 60),
                 source="realtime",
+                direction_id=getattr(
+                    scheduled_by_line.get(a.line), "direction_id", None
+                ),
             )
         )
 
@@ -330,4 +382,4 @@ def merge_arrivals(
 
     merged = realtime + kept_scheduled
     merged.sort(key=lambda a: a.minutes)
-    return merged[:MAX_ARRIVALS]
+    return first_per_line(merged)

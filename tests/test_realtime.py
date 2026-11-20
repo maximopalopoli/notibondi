@@ -13,17 +13,19 @@ from notibondi.realtime import (
     collect_stops_by_route,
     group_vehicles,
     line_number,
+    load_directions_by_stop,
     load_lines_by_stop,
     load_route_names,
     merge_arrivals,
+    resolve_directions,
     resolve_lines,
+    routes_by_stop,
     save_route_names,
     spellings,
     unknown_branches,
 )
 from notibondi.schedules import (
     BUENOS_AIRES,
-    MAX_ARRIVALS,
     WINDOW_SECONDS,
     Arrival,
 )
@@ -124,6 +126,67 @@ def test_load_lines_by_stop_returns_a_plain_dict(conn):
     assert type(lines_by_stop) is dict
 
 
+# load_directions_by_stop
+
+
+def test_load_directions_by_stop_pairs_each_line_with_its_direction(conn):
+    # gtfs-mini: 152A stops at its three stops both ways; 505R3 only goes
+    # one way (0)
+    assert load_directions_by_stop(conn) == {
+        "205696": {("152A", 0), ("152A", 1)},
+        "6490106165": {("152A", 0), ("152A", 1), ("505R3", 0)},
+        "204229": {("152A", 0), ("152A", 1)},
+        "691100952": {("505R3", 0)},
+    }
+
+
+# resolve_directions
+
+# A 152A that goes A -> B -> C as direction 0 and C -> D -> A as 1: A and C
+# are on both, B only on 0, D only on 1
+DIRECTIONS = {
+    "A": {("152A", 0), ("152A", 1)},
+    "B": {("152A", 0)},
+    "C": {("152A", 0), ("152A", 1)},
+    "D": {("152A", 1)},
+}
+
+
+def test_resolve_directions_takes_the_direction_of_the_stops():
+    stops = {"205": {"A", "B", "C"}, "206": {"C", "D", "A"}}
+    lines = {"205": "152A", "206": "152A"}
+
+    assert resolve_directions(stops, DIRECTIONS, lines, {}) == {"205": 0, "206": 1}
+
+
+def test_resolve_directions_only_counts_the_line_of_the_route():
+    # D is a 60 stop too: the 60 going the other way must not count
+    directions = {**DIRECTIONS, "B": {("152A", 0), ("60", 1)}, "X": {("60", 1)}}
+    stops = {"205": {"B", "X"}}
+
+    assert resolve_directions(stops, directions, {"205": "152A"}, {}) == {"205": 0}
+
+
+def test_resolve_directions_leaves_out_a_tie():
+    # A and C are on both ways: they don't tell
+    stops = {"205": {"A", "C"}}
+
+    assert resolve_directions(stops, DIRECTIONS, {"205": "152A"}, {}) == {}
+
+
+def test_resolve_directions_leaves_out_a_route_without_a_line():
+    stops = {"205": {"A", "B", "C"}}
+
+    assert resolve_directions(stops, DIRECTIONS, {}, {}) == {}
+
+
+def test_resolve_directions_of_an_unknown_branch_counts_every_branch():
+    directions = {**DIRECTIONS, "E": {("152C", 1)}, "F": {("152C", 1)}}
+    stops = {"999": {"B", "E", "F"}}
+
+    assert resolve_directions(stops, directions, {}, {"999": "152"}) == {"999": 1}
+
+
 # collect_stops_by_route
 
 
@@ -137,6 +200,15 @@ def test_collect_stops_by_route_groups_the_feed_stops(feed_205):
 def test_collect_stops_by_route_skips_stops_without_arrival(feed_205):
     # 6371100438 only comes as NO_DATA, and it is not a static stop.
     assert "6371100438" not in collect_stops_by_route(feed_205)["205"]
+
+
+def test_routes_by_stop_lists_the_route_ids_coming_to_each_stop(feed_205):
+    by_stop = routes_by_stop(feed_205)
+
+    assert len(by_stop) == 79
+    assert all(routes == {"205"} for routes in by_stop.values())
+    # NO_DATA stops come to nothing
+    assert "6371100438" not in by_stop
 
 
 # resolve_lines
@@ -539,13 +611,20 @@ def test_merge_puts_live_first_when_the_minutes_tie():
     assert [a.source for a in merged] == ["realtime", "scheduled"]
 
 
-def test_merge_keeps_only_the_earliest_max_arrivals():
-    live = [live_in(m * 60, trip_id=str(m)) for m in range(MAX_ARRIVALS + 5, 0, -1)]
+def test_merge_keeps_the_first_three_of_each_line():
+    live = [live_in(m * 60, trip_id=str(m)) for m in range(8, 0, -1)]
+    live += [live_in(m * 60, line="60", trip_id=f"60-{m}") for m in (20, 30, 40, 50)]
 
     merged = merge_arrivals(live, [], AT)
 
-    assert len(merged) == MAX_ARRIVALS
-    assert [a.minutes for a in merged] == list(range(1, MAX_ARRIVALS + 1))
+    assert [(a.line, a.minutes) for a in merged] == [
+        ("108A", 1),
+        ("108A", 2),
+        ("108A", 3),
+        ("60", 20),
+        ("60", 30),
+        ("60", 40),
+    ]
 
 
 # group_vehicles

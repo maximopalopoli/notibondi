@@ -152,6 +152,7 @@ def started(monkeypatch, lines_by_stop):
 
     monkeypatch.setattr(main, "get_engine", FakeEngine)
     monkeypatch.setattr(main, "load_lines_by_stop", lambda conn: lines_by_stop)
+    monkeypatch.setattr(main, "load_directions_by_stop", lambda conn: {})
     monkeypatch.setattr(main, "load_route_names", lambda conn: {})
     monkeypatch.setattr(main, "refresh_forever", fake_worker("trips"))
     monkeypatch.setattr(main, "refresh_vehicles_forever", fake_worker("vehicles"))

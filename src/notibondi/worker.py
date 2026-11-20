@@ -20,6 +20,7 @@ from notibondi.realtime import (
     LiveArrival,
     Vehicle,
     build_index,
+    collect_stops_by_route,
     group_vehicles,
     line_number,
     resolve_directions,
@@ -77,20 +78,29 @@ class LiveFeed:
     # Every name seen, by live route_id (see fetch_route_names). It starts
     # with the saved ones, so it doesn't wait for the first download.
     route_names: dict[str, str] = field(default_factory=dict)
+    # The live route_ids with arrivals at each stop (see routes_by_stop)
+    routes_by_stop: dict[str, set[str]] = field(default_factory=dict)
+    # The GTFS direction_id of each live route_id (see resolve_directions)
+    directions: dict[str, int] = field(default_factory=dict)
 
 
 MAX_VEHICLE_AGE_SECONDS = 60 * 5
 
 
-def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
+def vehicles_geojson(
+    live: LiveFeed, line: str, now: float, route_ids: set[str] | None = None
+) -> dict:
     """The buses of a line, plus the ones of its number with an unknown branch.
 
     Those have branch_known false, so the map can tell them apart: a bus of
-    "152" may be a 152A or a 152C, and it shows up on both.
+    "152" may be a 152A or a 152C, and it shows up on both. With route_ids,
+    only the buses of those live route_ids.
     """
     number = line_number(line)
     routes = [(r, True) for r, name in live.lines.items() if name == line]
     routes += [(r, False) for r, n in live.unknown_branch.items() if n == number]
+    if route_ids is not None:
+        routes = [(r, known) for r, known in routes if r in route_ids]
 
     features = []
     for live_route_id, branch_known in routes:
@@ -110,7 +120,10 @@ def vehicles_geojson(live: LiveFeed, line: str, now: float) -> dict:
                         "line": line if branch_known else number,
                         "label": v.label,
                         "timestamp": v.timestamp,
-                        "direction_id": v.direction_id,
+                        # The stops' direction; the feed's one when they don't tell
+                        "direction_id": live.directions.get(
+                            live_route_id, v.direction_id
+                        ),
                         "branch_known": branch_known,
                     },
                 }

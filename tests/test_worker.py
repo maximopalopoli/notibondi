@@ -599,10 +599,15 @@ SAMPLE_NOW = 1794830100
 
 @pytest.fixture
 def live_108(settings):
-    """A LiveFeed with the 108A sample: live route 205 resolves to 108A."""
+    """A LiveFeed with the 108A sample: live route 205 resolves to 108A,
+    going the GTFS direction 0."""
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(VEHICLES_BYTES)
-    return LiveFeed(lines={"205": "108A"}, vehicles=worker.group_vehicles(feed))
+    return LiveFeed(
+        lines={"205": "108A"},
+        vehicles=worker.group_vehicles(feed),
+        directions={"205": 0},
+    )
 
 
 def bus(vehicle_id: str, timestamp: int = SAMPLE_NOW) -> Vehicle:
