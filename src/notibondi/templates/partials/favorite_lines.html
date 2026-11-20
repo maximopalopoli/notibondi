@@ -1,0 +1,30 @@
+{% if note %}<p class="note">{{ note }}</p>{% endif %}
+{# Each favorite line with its stop nearest to you, which opens like any
+   stop, showing only that line's arrivals #}
+<ul class="favorite-lines">
+  {% for f in favorites %}
+  <li>
+    <p class="favorite-line">
+      <span><strong>{{ f.line }}</strong> {{ f.headsign }}</span>
+      {# favorites.js marks it, like a stop's star #}
+      <button type="button" class="fav" aria-pressed="false"
+              aria-label="Línea favorita: {{ f.line }} {{ f.headsign }}"
+              data-line="{{ f.line }}" data-direction="{{ f.direction_id }}">☆</button>
+    </p>
+    {# Only on /favorites: favorites.js moves it in the list and in the browser #}
+    {% if reorder %}
+    <span class="move">
+      <button type="button" data-move="-1" aria-label="Subir la {{ f.line }} {{ f.headsign }}">↑</button>
+      <button type="button" data-move="1" aria-label="Bajar la {{ f.line }} {{ f.headsign }}">↓</button>
+    </span>
+    {% endif %}
+    {% if f.stop %}
+    {% with stops=[f.stop], only_line=f.line, note=none, empty_message="", reorder=false %}
+    {% include "partials/stops.html" %}
+    {% endwith %}
+    {% endif %}
+  </li>
+  {% else %}
+  <li>{{ empty_message }}</li>
+  {% endfor %}
+</ul>

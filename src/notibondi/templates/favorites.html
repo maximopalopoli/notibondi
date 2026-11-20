@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Favoritas · notibondi{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='home.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<h1>Favoritas</h1>
+{# home.js fills them; data-all: every favorite, not just the nearest #}
+<h2>Paradas</h2>
+<div id="favorite" data-all><p>Buscando tus paradas favoritas…</p></div>
+<h2>Líneas</h2>
+<div id="favorite-line" data-all><p>Buscando tus líneas favoritas…</p></div>
+{% endblock %}

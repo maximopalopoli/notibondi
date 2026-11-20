@@ -146,6 +146,131 @@ def search_stops(conn: Connection, q: str, limit: int) -> list[Stop]:
     return [Stop(**row._mapping) for row in rows]
 
 
+class FavoriteStop(Stop):
+    # None when the browser didn't say where the user is
+    distance_m: int | None
+    lat: float
+    lon: float
+
+
+MAX_FAVORITES = 50
+
+
+def favorite_stops(
+    conn: Connection,
+    ids: list[str],
+    lat: float | None = None,
+    lon: float | None = None,
+    by_distance: bool = True,
+) -> list[FavoriteStop]:
+    """The user's favorite stops, in the order the browser keeps them (the
+    user's: a new one goes first, and /favorites can move them). With a
+    position and by_distance, the nearest first instead. Ids that don't
+    exist anymore (a new GTFS) are left out."""
+    near = lat is not None and lon is not None
+    # Only one of two fixed strings goes into the SQL, never user input
+    distance = (
+        "ROUND(ST_Distance(s.geom, "
+        "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int"
+        if near
+        else "NULL::int"
+    )
+    rows = conn.execute(
+        text(f"""
+            SELECT s.stop_id,
+                s.stop_name,
+                {distance} AS distance_m,
+                ST_Y(s.geom::geometry) AS lat,
+                ST_X(s.geom::geometry) AS lon,
+                array_remove(
+                    array_agg(r.route_short_name ORDER BY r.route_short_name),
+                    NULL
+                ) AS lines
+            FROM stops s
+            LEFT JOIN stop_routes sr ON sr.stop_id = s.stop_id
+            LEFT JOIN routes r ON r.route_id = sr.route_id
+            WHERE s.stop_id = ANY(CAST(:ids AS text[]))
+            GROUP BY s.stop_id, s.stop_name, s.geom
+            ORDER BY {"distance_m, " if by_distance else ""}
+                array_position(CAST(:ids AS text[]), s.stop_id)
+        """),
+        {"ids": ids, "lat": lat, "lon": lon},
+    )
+    return [FavoriteStop(**row._mapping) for row in rows]
+
+
+class FavoriteLine(BaseModel):
+    line: str  # "108A"
+    direction_id: int
+    headsign: str  # "a Retiro"
+    # Its stop nearest to the user; None when the browser didn't say where
+    # the user is
+    stop: FavoriteStop | None
+
+
+def favorite_lines(
+    conn: Connection,
+    favorites: list[tuple[str, int]],
+    lat: float | None = None,
+    lon: float | None = None,
+    by_distance: bool = True,
+) -> list[FavoriteLine]:
+    """The user's favorite lines, each one a line and a direction ("108A a
+    Retiro": the other way may stop on the other side of the street). With
+    a position, each one with its stop nearest to the user. In the user's
+    order (see favorite_stops), or with a position and by_distance, the
+    nearest first. Lines that don't exist anymore (a new GTFS) are left out."""
+    near = lat is not None and lon is not None
+    rows = conn.execute(
+        text("""
+            WITH fav AS (
+                SELECT * FROM unnest(CAST(:lines AS text[]), CAST(:dirs AS int[]))
+                    WITH ORDINALITY AS f(line, direction_id, n)
+            )
+            SELECT DISTINCT ON (f.n)
+                f.n, f.line, f.direction_id, t.trip_headsign AS headsign,
+                s.stop_id, s.stop_name,
+                ST_Y(s.geom::geometry) AS lat, ST_X(s.geom::geometry) AS lon,
+                CASE WHEN :near THEN ROUND(ST_Distance(
+                    s.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
+                ))::int END AS distance_m
+            FROM fav f
+            JOIN routes r ON r.route_short_name = f.line
+            JOIN route_stops rs
+                ON rs.route_id = r.route_id AND rs.direction_id = f.direction_id
+            JOIN trips t ON t.trip_id = rs.trip_id
+            JOIN stops s ON s.stop_id = rs.stop_id
+            ORDER BY f.n, distance_m, rs.stop_sequence
+        """),
+        {
+            "lines": [line for line, _ in favorites],
+            "dirs": [direction for _, direction in favorites],
+            "near": near,
+            "lat": lat,
+            "lon": lon,
+        },
+    ).all()
+    stops = {
+        stop.stop_id: stop
+        for stop in (
+            favorite_stops(conn, list({r.stop_id for r in rows}), lat, lon)
+            if near
+            else []
+        )
+    }
+    # The nearest first; on a tie, or without it, the user's order
+    rows = sorted(rows, key=lambda r: ((r.distance_m or 0) if by_distance else 0, r.n))
+    return [
+        FavoriteLine(
+            line=r.line,
+            direction_id=r.direction_id,
+            headsign=r.headsign,
+            stop=stops.get(r.stop_id),
+        )
+        for r in rows
+    ]
+
+
 def stop_lines(conn: Connection, stop_id: str) -> list[str] | None:
     """The lines that stop at stop_id, or None if there's no such stop."""
     if not stop_exists(conn, stop_id):

@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 import httpx2
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -35,6 +36,7 @@ from notibondi.routes import (
 )
 from notibondi.schedules import Arrival, next_arrivals, now
 from notibondi.stops import (
+    MAX_FAVORITES,
     MAX_RADIUS_M,
     MAX_SEARCH_LIMIT,
     FavoriteStop,
@@ -249,6 +251,89 @@ def nearby_stops_partial(
             "empty_message": "No hay paradas cerca.",
         },
     )
+
+
+OptLat = Annotated[float | None, Query(ge=-90, le=90)]
+OptLon = Annotated[float | None, Query(ge=-180, le=180)]
+# The home page shows the nearest one; /favorites, with ?all=true, all of them
+ShowAll = Annotated[bool, Query(alias="all")]
+# A favorite line as the browser keeps it: the line and its direction_id
+FAVORITE_LINE = re.compile(r"[0-9A-Za-z]{1,10}:[01]")
+
+
+@app.get(
+    "/partials/stops/favorite", response_class=HTMLResponse, include_in_schema=False
+)
+def favorite_stop_partial(
+    request: Request,
+    conn: Conn,
+    ids: Annotated[list[str], Query()],
+    lat: OptLat = None,
+    lon: OptLon = None,
+    show_all: ShowAll = False,
+):
+    """The favorite stops. On the home page, the nearest one, or the user's
+    first one when the browser doesn't say where the user is. With ?all
+    (/favorites), all of them in the user's order, to move them around."""
+    if len(ids) > MAX_FAVORITES or any(len(i) > 50 for i in ids):
+        raise HTTPException(status_code=422, detail="Too many or too long ids")
+    stops = favorite_stops(conn, ids, lat, lon, by_distance=not show_all)
+    note = None
+    if not show_all:
+        stops = stops[:1]
+        if stops and stops[0].distance_m is None:
+            note = "Tu primera favorita: no sabemos dónde estás."
+    return templates.TemplateResponse(
+        request,
+        "partials/stops.html",
+        {
+            "stops": stops,
+            "note": note,
+            "reorder": show_all,
+            "empty_message": "Tus paradas favoritas ya no existen.",
+        },
+    )
+
+
+@app.get(
+    "/partials/lines/favorite", response_class=HTMLResponse, include_in_schema=False
+)
+def favorite_lines_partial(
+    request: Request,
+    conn: Conn,
+    lines: Annotated[list[str], Query()],
+    lat: OptLat = None,
+    lon: OptLon = None,
+    show_all: ShowAll = False,
+):
+    """The favorite lines ("108A:1"), each with its stop nearest to the
+    user. Ordered like favorite_stop_partial."""
+    if len(lines) > MAX_FAVORITES or not all(FAVORITE_LINE.fullmatch(f) for f in lines):
+        raise HTTPException(status_code=422, detail="Too many or malformed lines")
+    pairs = [
+        (line, int(direction)) for line, direction in (f.split(":") for f in lines)
+    ]
+    favorites = favorite_lines(conn, pairs, lat, lon, by_distance=not show_all)
+    if not show_all:
+        favorites = favorites[:1]
+    note = None
+    if favorites and lat is None:
+        note = "No sabemos dónde estás, así que no podemos buscar la parada más cerca."
+    return templates.TemplateResponse(
+        request,
+        "partials/favorite_lines.html",
+        {
+            "favorites": favorites,
+            "note": note,
+            "reorder": show_all,
+            "empty_message": "Tus líneas favoritas ya no existen.",
+        },
+    )
+
+
+@app.get("/favorites", response_class=HTMLResponse, include_in_schema=False)
+def favorites_page(request: Request):
+    return templates.TemplateResponse(request, "favorites.html")
 
 
 Q = Annotated[str, Query(min_length=2, max_length=100)]

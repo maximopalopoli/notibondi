@@ -1,6 +1,6 @@
 import pytest
 
-from notibondi.stops import find_nearby_stops
+from notibondi.stops import MAX_RADIUS_M, find_farther_line_stops, find_nearby_stops
 
 # Plaza Italia, one of the stops of the mini GTFS
 PLAZA_ITALIA = {"lat": -34.581, "lon": -58.421}
@@ -156,8 +156,8 @@ def test_nearby_partial_shows_distance_and_lines(client):
     html = client.get("/partials/stops/nearby", params=PLAZA_ITALIA).text
 
     assert "0 m" in html
-    assert "<li>152A</li>" in html
-    assert "<li>505R3</li>" in html
+    assert ">152A</button>" in html
+    assert ">505R3</button>" in html
 
 
 def test_nearby_partial_shows_message_when_nothing_is_close(client):
@@ -206,3 +206,82 @@ def test_nearby_partial_renders_stop_without_routes(client):
 
     assert response.status_code == 200
     assert "PARADA SIN LINEAS" in response.text
+
+
+# Farther stops of other lines: where few lines stop near you
+
+
+ONLY_505R3 = "691100952"
+
+
+def at_stop(conn, stop_id):
+    stop = next(
+        s
+        for s in find_nearby_stops(conn, -34.581, -58.421, MAX_RADIUS_M)
+        if s.stop_id == stop_id
+    )
+    return stop.lat, stop.lon
+
+
+def test_farther_stops_bring_the_lines_not_near(conn):
+    lat, lon = at_stop(conn, ONLY_505R3)
+
+    farther = find_farther_line_stops(conn, lat, lon, radius=50)
+
+    # Only the 505R3 stops within 50 m: the 152A comes from its nearest stop,
+    # once, and not from the one 2 km away
+    assert "152A" in {line for s in farther for line in s.lines}
+    assert all(50 < s.distance_m <= 1000 for s in farther)
+    assert len(farther) == 1
+    assert farther[0].stop_id != "204229"
+
+
+def test_no_farther_stops_when_every_line_is_near(conn):
+    # Plaza Italia's own stop has both lines of the fixture
+    assert find_farther_line_stops(conn, -34.581, -58.421, radius=50) == []
+
+
+def test_farther_stops_are_capped(conn):
+    lat, lon = at_stop(conn, ONLY_505R3)
+
+    assert find_farther_line_stops(conn, lat, lon, radius=50, max_stops=0) == []
+
+
+def test_farther_stops_stop_at_max_m(conn):
+    lat, lon = at_stop(conn, ONLY_505R3)
+
+    assert find_farther_line_stops(conn, lat, lon, radius=50, max_m=60) == []
+
+
+def test_the_nearby_partial_puts_farther_stops_after_a_divider(client):
+    lat, lon = at_stop_lat_lon(client)
+    html = client.get(
+        "/partials/stops/nearby", params={"lat": lat, "lon": lon, "radius": 50}
+    ).text
+
+    assert (
+        '<li class="farther" role="presentation">Más lejos, otras líneas</li>' in html
+    )
+    divider = html.index('class="farther"')
+    assert html.index(f'data-stop-id="{ONLY_505R3}"') < divider
+    assert ">152A</button>" in html[divider:]
+
+
+def test_no_divider_without_farther_stops(client):
+    html = client.get(
+        "/partials/stops/nearby", params={"lat": -34.581, "lon": -58.421}
+    ).text
+
+    assert 'class="farther"' not in html
+
+
+def at_stop_lat_lon(client):
+    stop = next(
+        s
+        for s in client.get(
+            "/api/v1/stops/nearby",
+            params={"lat": -34.581, "lon": -58.421, "radius": MAX_RADIUS_M},
+        ).json()
+        if s["stop_id"] == ONLY_505R3
+    )
+    return stop["lat"], stop["lon"]
