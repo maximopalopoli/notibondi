@@ -106,3 +106,9 @@ function tick() {
   label.textContent = seconds < 5 ? "Actualizado recién" : `Actualizado hace ${seconds} s`;
 }
 setInterval(tick, 5000);
+
+// Installable as an app (PWA). Browsers without it, or a page not on HTTPS
+// nor localhost, just keep working as a website
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}

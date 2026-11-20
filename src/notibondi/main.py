@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 import httpx2
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Connection
@@ -194,6 +194,26 @@ def nearby_stops(
     radius: Radius = 400,
 ):
     return find_nearby_stops(conn, lat, lon, radius)
+
+
+# The browser checks /sw.js for a new version: no-cache, so it always asks
+# (it can still get a 304), and no ?v=, because its URL must never change
+NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    """At the root, not under /static/: a service worker only controls the
+    URLs under its own folder."""
+    return FileResponse(
+        BASE_DIR / "static" / "sw.js", media_type="text/javascript", headers=NO_CACHE
+    )
+
+
+@app.get("/offline", response_class=HTMLResponse, include_in_schema=False)
+def offline(request: Request):
+    """Saved by the service worker on install, shown when a page can't load."""
+    return templates.TemplateResponse(request, "offline.html", headers=NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

@@ -1,0 +1,33 @@
+<!doctype html>
+{# Not based on base.html: the service worker saves only this page, so it
+   can't depend on style.css or the scripts being in the cache too #}
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a73e8">
+  <title>Sin conexión · notibondi</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    .brand {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    a {
+      display: inline-block;
+      padding: 0.75rem 0;
+    }
+  </style>
+</head>
+<body>
+  <p class="brand">notibondi</p>
+  <h1>Sin conexión</h1>
+  <p>Sin internet no podemos saber cuándo llega tu colectivo. Revisá tu conexión y probá de nuevo.</p>
+  <a href="/">Probar de nuevo</a>
+</body>
+</html>
