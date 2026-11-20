@@ -1,0 +1,7 @@
+{# MapLibre and the basemap, for every page with a map. Before the page's own
+   map script: it calls Basemap.style() #}
+<link rel="stylesheet" href="{{ static_url('maplibre-gl.css') }}">
+<script src="{{ static_url('maplibre-gl.js') }}" defer></script>
+<script src="{{ static_url('pmtiles.js') }}" defer></script>
+<script src="{{ static_url('basemaps.js') }}" defer></script>
+<script src="{{ static_url('basemap.js') }}" defer></script>

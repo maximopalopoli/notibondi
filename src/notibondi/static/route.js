@@ -8,8 +8,8 @@ const map = new maplibregl.Map({
   center: [-58.44, -34.61], // [lon, lat], only until the route is drawn
   zoom: 11,
   // A light grey vector style, so the route is the main thing on the map.
-  // It brings its own attribution (OpenFreeMap and OpenStreetMap).
-  style: "https://tiles.openfreemap.org/styles/positron",
+  // It brings its own attribution (basemap.js).
+  style: Basemap.style(),
 });
 
 map.on("load", () => {

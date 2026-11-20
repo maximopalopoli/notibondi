@@ -47,7 +47,7 @@ function createMap() {
       container: mapEl,
       center: [-58.44, -34.61],
       zoom: 15,
-      style: "https://tiles.openfreemap.org/styles/positron",
+      style: Basemap.style(),
     });
   } catch (error) {
     // No WebGL, for example: the list works the same without the map

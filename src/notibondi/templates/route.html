@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 
 {% block scripts %}
-<link rel="stylesheet" href="{{ static_url('maplibre-gl.css') }}">
-<script src="{{ static_url('maplibre-gl.js') }}" defer></script>
+{% include "partials/map_scripts.html" %}
 <script src="{{ static_url('route_layers.js') }}" defer></script>
 <script src="{{ static_url('route.js') }}" defer></script>
 {% endblock %}

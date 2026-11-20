@@ -11,7 +11,7 @@ const map = new maplibregl.Map({
   // which may take seconds or never come (Brave on a desktop)
   center: OBELISCO,
   zoom: 13,
-  style: "https://tiles.openfreemap.org/styles/positron",
+  style: Basemap.style(),
 });
 
 // Sources can only be added once the style has loaded. A promise, because

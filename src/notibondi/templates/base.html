@@ -10,6 +10,9 @@
   <link rel="icon" href="{{ static_url('icon-192.png') }}" type="image/png">
   <link rel="apple-touch-icon" href="{{ static_url('icon-180.png') }}">
   <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  {# Our own map tiles when the server has them (basemap.js) #}
+  {% set tiles = tiles_url() %}
+  {% if tiles %}<meta name="basemap-tiles" content="{{ tiles }}">{% endif %}
   <script src="{{ static_url('htmx.min.js') }}" defer></script>
   <script src="{{ static_url('ui.js') }}" defer></script>
   <script src="{{ static_url('favorites.js') }}" defer></script>

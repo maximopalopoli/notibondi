@@ -1,4 +1,4 @@
-.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot track
+.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot track tiles
 
 up:
 	docker compose up -d --wait db
@@ -36,3 +36,11 @@ pilot:
 
 track:
 	uv run python pilot/tracker.py
+
+# The map of the AMBA, cut from Protomaps' daily world build (tiles.py).
+# Needs the pmtiles CLI (github.com/protomaps/go-pmtiles) in the PATH.
+# BUILD is a date with a build: https://maps.protomaps.com/builds
+# make tiles BUILD=20261118 NAME=amba-2026-11
+AMBA_BBOX = -60.98,-35.19,-57.72,-34.04
+tiles:
+	pmtiles extract https://build.protomaps.com/$(BUILD).pmtiles data/tiles/$(NAME).pmtiles --bbox=$(AMBA_BBOX)

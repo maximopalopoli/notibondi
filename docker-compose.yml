@@ -28,6 +28,10 @@ services:
       TZ: America/Argentina/Buenos_Aires
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      # The map tiles (tiles.py): too big for the image, and cut again apart
+      # from a deploy. Read-only, the app only serves them
+      - ./data/tiles:/app/data/tiles:ro
     depends_on:
       db:
         condition: service_healthy
