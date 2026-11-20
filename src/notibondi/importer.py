@@ -26,10 +26,28 @@ def base_service(service_id: str) -> str:
     return service_id.split("-", 1)[0]
 
 
+def fix_double_utf8(value: str) -> str:
+    """ "EstaciÃ³n" -> "Estación".
+
+    The GCBA's trips.txt mixes good text with text encoded to UTF-8 twice
+    (on 2026-11-19, 77,041 lines with accents broken and 540 fine), so it
+    can't be read with another encoding: each value is fixed on its own.
+    Undoing the second encoding fails on good text ("ó" alone isn't valid
+    UTF-8), and then the value stays as it is.
+    """
+    if value.isascii():
+        return value
+    try:
+        return value.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return value
+
+
 def read_csv(zf: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     with zf.open(name) as raw:
         text_file = io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")
-        yield from csv.DictReader(text_file)
+        for row in csv.DictReader(text_file):
+            yield {key: fix_double_utf8(value) for key, value in row.items()}
 
 
 def load_stops(conn: Connection, zf: zipfile.ZipFile) -> None:

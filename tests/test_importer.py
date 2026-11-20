@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from notibondi.importer import import_gtfs
+from notibondi.importer import fix_double_utf8, import_gtfs
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "gtfs-mini"
 
@@ -472,3 +472,20 @@ def test_import_fails_if_the_holiday_service_runs_a_weekday(db_engine, tmp_path)
         with pytest.raises(ValueError, match="holiday service"):
             import_gtfs(conn, zip_path)
         conn.rollback()
+
+
+# Accents: the GCBA's trips.txt has text encoded to UTF-8 twice
+
+
+def test_fixes_text_encoded_twice():
+    assert fix_double_utf8("a EstaciÃ³n BsAs") == "a Estación BsAs"
+    assert fix_double_utf8("R2 x BÂº Golf") == "R2 x Bº Golf"
+    assert fix_double_utf8("Villa EspaÃ±a") == "Villa España"
+
+
+def test_leaves_good_text_as_it_is():
+    assert fix_double_utf8("a Estación BsAs") == "a Estación BsAs"
+    assert fix_double_utf8("Ñandú") == "Ñandú"
+    assert fix_double_utf8("Retiro") == "Retiro"
+    # Not in Latin-1 at all: can't have been encoded twice
+    assert fix_double_utf8("“Expreso”") == "“Expreso”"
