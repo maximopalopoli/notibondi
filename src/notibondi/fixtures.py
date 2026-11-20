@@ -27,7 +27,7 @@ def load_fixtures(
     feed = read_trip_updates()
     shift_trip_timestamps(feed)
     names = live.route_names
-    index, lines, unknown = build_index(feed, lines_by_stop, names)
+    index, lines, unknown = build_index(feed, lines_by_stop, names, live.overrides)
     live.index = index
     live.lines = lines
     live.unknown_branch = unknown

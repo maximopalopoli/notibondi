@@ -1,7 +1,9 @@
+import csv
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from google.transit import gtfs_realtime_pb2
 from sqlalchemy import Connection, text
@@ -19,6 +21,10 @@ MAX_DELAY_SECONDS = 12 * 60 * 60
 # The feed often sends one bus as two (two vehicles on the same trip, ~12 s
 # apart, so "1, 1, 16, 16 min"): arrivals of a line closer than this are one
 SAME_BUS_SECONDS = 60
+
+# Lines checked by hand for route_ids the stops and the names can't decide
+# (see load_overrides). It goes in the package, so the Docker image has it.
+OVERRIDES_PATH = Path(__file__).parent / "route_overrides.csv"
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,7 @@ def build_index(
     feed: gtfs_realtime_pb2.FeedMessage,
     lines_by_stop: dict[str, set[str]],
     names: dict[str, str] | None = None,
+    overrides: dict[str, str] | None = None,
 ) -> tuple[dict[str, list[LiveArrival]], dict[str, str], dict[str, str]]:
     """Map each stop_id to its live arrivals, sorted by time.
 
@@ -55,6 +62,8 @@ def build_index(
     come to the stops of any branch of their number as "152", with
     branch_known false. Not as the only branch that stops there: the name
     may be of a branch the GTFS doesn't have ("21 R Fca Ford").
+
+    The overrides (load_overrides) win over both: see apply_overrides.
     """
     stops_by_route = collect_stops_by_route(feed)
     names = names or {}
@@ -63,6 +72,7 @@ def build_index(
     unknown = unknown_branches(
         names, lines, static_lines, stops_by_route, lines_by_stop
     )
+    lines, unknown = apply_overrides(lines, unknown, overrides or {}, static_lines)
     index: dict[str, list[LiveArrival]] = defaultdict(list)
 
     for entity in feed.entity:
@@ -307,6 +317,61 @@ def unknown_branches(
         if number is not None and number in numbers:
             result[route_id] = number
     return result
+
+
+def load_overrides(path: Path = OVERRIDES_PATH) -> dict[str, str]:
+    """The line of each route_id in the overrides file.
+
+    Columns route_id,line,confidence,checked_on,note; only the first two are
+    read, the rest are for whoever checks the file. A route_id twice is a
+    mistake in the file, not something to choose from.
+    """
+    result = {}
+    with path.open(newline="") as file:
+        for row in csv.DictReader(file):
+            route_id, line = row["route_id"].strip(), row["line"].strip()
+            if route_id in result:
+                raise ValueError(f"{path.name}: route_id {route_id} is there twice")
+            result[route_id] = line
+    return result
+
+
+def unknown_overrides(overrides: dict[str, str], static_lines: set[str]) -> set[str]:
+    """The route_ids of the rows apply_overrides skips: their line is
+    neither a branch nor a number the GTFS has (after a new GTFS)."""
+    numbers = {line_number(line) for line in static_lines}
+    return {
+        route_id
+        for route_id, line in overrides.items()
+        if line not in static_lines and not (line.isdigit() and line in numbers)
+    }
+
+
+def apply_overrides(
+    lines: dict[str, str],
+    unknown: dict[str, str],
+    overrides: dict[str, str],
+    static_lines: set[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Lines and unknown branches, with the overrides file winning.
+
+    A branch ("252A") is the route_id's line. A number ("114") makes it an
+    unknown branch of that number, unless the line we have is already a
+    branch of it ("57A" from the name, for a row that says "57"): that one
+    says more. Rows with a line the GTFS doesn't have are skipped.
+    """
+    lines, unknown = dict(lines), dict(unknown)
+    skipped = unknown_overrides(overrides, static_lines)
+    for route_id, line in overrides.items():
+        if route_id in skipped:
+            continue
+        if line in static_lines:
+            lines[route_id] = line
+            unknown.pop(route_id, None)
+        elif line_number(lines.get(route_id, "")) != line:
+            lines.pop(route_id, None)
+            unknown[route_id] = line
+    return lines, unknown
 
 
 def resolve_directions(

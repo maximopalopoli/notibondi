@@ -77,6 +77,8 @@ class LiveFeed:
     # Every name seen, by live route_id (see fetch_route_names). It starts
     # with the saved ones, so it doesn't wait for the first download.
     route_names: dict[str, str] = field(default_factory=dict)
+    # The lines checked by hand, by live route_id (see load_overrides)
+    overrides: dict[str, str] = field(default_factory=dict)
     # The live route_ids with arrivals at each stop (see routes_by_stop)
     routes_by_stop: dict[str, set[str]] = field(default_factory=dict)
     # The GTFS direction_id of each live route_id (see resolve_directions)
@@ -171,7 +173,7 @@ async def refresh_forever(
         feed = await fetch_trip_updates(client, settings)
         names = live.route_names
         index, lines, unknown = await asyncio.to_thread(
-            build_index, feed, lines_by_stop, names
+            build_index, feed, lines_by_stop, names, live.overrides
         )
         by_stop = await asyncio.to_thread(routes_by_stop, feed)
         directions = await asyncio.to_thread(

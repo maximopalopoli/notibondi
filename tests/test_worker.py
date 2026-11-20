@@ -275,6 +275,25 @@ async def test_a_good_download_fills_the_index(settings, lines_by_stop):
 
 
 @pytest.mark.anyio
+async def test_a_download_uses_the_overrides_of_the_live_feed(settings, lines_by_stop):
+    # Route 205 is a 108A by its stops (108B stops at only one of them),
+    # and route_overrides.csv would win
+    lines_by_stop = dict(lines_by_stop)
+    lines_by_stop[min(lines_by_stop)] = {"108A", "108B"}
+    live = LiveFeed(overrides={"205": "108B"})
+    client, _ = responses(200)
+
+    async with client:
+        await run_until(
+            refresh_forever(live, client, settings, lines_by_stop),
+            lambda: live.fetched_at is not None,
+        )
+
+    assert live.lines["205"] == "108B"
+    assert all(a.line == "108B" for a in live.index["20724"])
+
+
+@pytest.mark.anyio
 async def test_a_good_download_also_stores_the_resolved_lines(settings, lines_by_stop):
     live = LiveFeed()
     client, _ = responses(200)

@@ -24,9 +24,11 @@ from notibondi.realtime import (
     line_number,
     load_directions_by_stop,
     load_lines_by_stop,
+    load_overrides,
     load_route_names,
     merge_arrivals,
     save_route_names,
+    unknown_overrides,
 )
 from notibondi.routes import (
     LINE_NAME,
@@ -87,7 +89,15 @@ async def lifespan(app: FastAPI):
         lines_by_stop = load_lines_by_stop(conn)
         directions_by_stop = load_directions_by_stop(conn)
         route_names = load_route_names(conn)
-    app.state.live = LiveFeed(route_names=route_names)
+    overrides = load_overrides()
+    static_lines = {line for lines in lines_by_stop.values() for line in lines}
+    if skipped := unknown_overrides(overrides, static_lines):
+        logging.getLogger(__name__).warning(
+            "route_overrides.csv: %d rows with a line the GTFS doesn't have: %s",
+            len(skipped),
+            ", ".join(sorted(skipped)),
+        )
+    app.state.live = LiveFeed(route_names=route_names, overrides=overrides)
     async with httpx2.AsyncClient(timeout=30) as client:
         settings = get_settings()
         tasks = []

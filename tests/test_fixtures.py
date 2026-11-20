@@ -205,3 +205,15 @@ def test_live_feeds_defaults_to_gcba(monkeypatch):
         gcba_client_secret="the-secret",
     )
     assert settings.live_feeds == "gcba"
+
+
+def test_load_fixtures_uses_the_overrides_of_the_live_feed(lines_by_stop):
+    # Route 205 is a 108A by its stops (108B stops at only one of them),
+    # and route_overrides.csv would win
+    lines_by_stop = dict(lines_by_stop)
+    lines_by_stop[min(lines_by_stop)] = {"108A", "108B"}
+    live = LiveFeed(overrides={"205": "108B"})
+
+    load_fixtures(live, lines_by_stop)
+
+    assert live.lines["205"] == "108B"
