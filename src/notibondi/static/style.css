@@ -265,6 +265,48 @@ input[type="search"] {
   margin: 1rem 0 0;
 }
 
+/* Under a line's map: the legend of its two directions, which also picks
+   one of them (route_layers.js). Buttons big enough for a finger */
+.directions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.directions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0 0.8rem;
+  font: inherit;
+  color: inherit;
+  background: #eee;
+  border: 2px solid transparent;
+  border-radius: 1.4rem;
+  cursor: pointer;
+}
+
+.directions button[aria-pressed="true"] {
+  background: #fff;
+  border-color: #000;
+  font-weight: bold;
+}
+
+.directions button:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+/* The color of the direction, like its line on the map */
+.directions .swatch {
+  width: 1.4rem;
+  height: 0.35rem;
+  border-radius: 0.2rem;
+  box-shadow: 0 0 0 2px #fff;
+}
+
 #stops-map {
   height: 40vh;
   min-height: 15rem;
