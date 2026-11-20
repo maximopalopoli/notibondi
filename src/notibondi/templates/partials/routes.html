@@ -1,7 +1,16 @@
 {% if routes %}
-<ul>
+{# On "Mapa de líneas", lines_map.js draws the branch on the map instead of
+   following the link (a middle click still opens its page) #}
+<ul class="branches">
   {% for route in routes %}
-  <li><a href="/routes/{{ route.route_id }}">{{ route.route_short_name }}</a> · {{ route.route_desc }}</li>
+  <li><a data-route-id="{{ route.route_id }}" href="/routes/{{ route.route_id }}">{{ route.route_short_name }}</a> · {{ route.route_desc }}
+    {# A favorite line goes one way: one star per direction (favorites.js) #}
+    {% for direction_id, headsign in headsigns.get(route.route_id, []) %}
+    <button type="button" class="fav" aria-pressed="false"
+            aria-label="Línea favorita: {{ route.route_short_name }} {{ headsign }}"
+            data-line="{{ route.route_short_name }}" data-direction="{{ direction_id }}">☆ {{ headsign }}</button>
+    {% endfor %}
+  </li>
   {% endfor %}
 </ul>
 {% else %}

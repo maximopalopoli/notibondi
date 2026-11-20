@@ -1,15 +1,42 @@
 {% extends "base.html" %}
 
-{% block content %}
-<h1>Buscar línea</h1>
-<p><a href="/">← Paradas</a></p>
+{% block title %}Mapa de líneas · notibondi{% endblock %}
 
-<label for="search">Número de línea</label>
-<input type="search" id="search" name="q" maxlength="10"
-       placeholder="Ej: 152" autocomplete="off"
-       hx-get="/partials/routes/search"
-       hx-trigger="input changed delay:300ms, search"
-       hx-target="#search-results"
-       hx-sync="this:replace">
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', path='maplibre-gl.css') }}">
+<script src="{{ url_for('static', path='maplibre-gl.js') }}" defer></script>
+<script src="{{ url_for('static', path='route_layers.js') }}" defer></script>
+<script src="{{ url_for('static', path='lines_map.js') }}" defer></script>
+<script src="{{ url_for('static', path='line_select.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<h1>Mapa de líneas</h1>
+
+{# A native select, so the phone shows its own picker. line_select.js turns
+   it into two steps (the range, then the number); these optgroups are what
+   it reads them from. Only a line name loads its branches: "range:1" and
+   "back:" are those steps, and "" is the placeholder #}
+<label for="line-select">Seleccioná la línea</label>
+<select id="line-select" name="q"
+        hx-get="/partials/routes/search"
+        hx-trigger="change[this.value && !this.value.includes(':')]"
+        hx-target="#search-results"
+        hx-sync="this:replace">
+  <option value="">Elegí un número…</option>
+  {% for label, names in groups %}
+  <optgroup label="{{ label }}">
+    {% for name in names %}<option>{{ name }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+
 <div id="search-results"></div>
+
+{# Starts at the Obelisco, and moves to you if the browser knows where you
+   are. Picking a branch draws it here, with its buses #}
+<div id="lines-map"></div>
+<p id="no-live" hidden>Sin datos en vivo para esta línea.</p>
+<p id="unknown-branch" hidden>Los círculos claros son colectivos de esta línea
+  sin ramal conocido: pueden ser de otro ramal.</p>
 {% endblock %}

@@ -1,8 +1,13 @@
 import json
+import re
 from itertools import groupby
 
 from pydantic import BaseModel
 from sqlalchemy import Connection, text
+
+# search_routes puts the line name inside a regex, so only letters and digits
+LINE_NAME_PATTERN = "^[0-9A-Za-z]{1,10}$"
+LINE_NAME = re.compile(LINE_NAME_PATTERN)
 
 
 class Route(BaseModel):
@@ -40,6 +45,53 @@ def search_routes(conn: Connection, q: str) -> list[Route]:
         {"pattern": f"^{q}([^0-9]|$)"},
     )
     return [Route(**row._mapping) for row in rows]
+
+
+def route_headsigns(
+    conn: Connection, route_ids: list[str]
+) -> dict[str, list[tuple[int, str]]]:
+    """Each route's directions and where they go: {"1001": [(0, "a Olivos"),
+    (1, "a La Boca")]}, so a line can be saved as a favorite one way."""
+    rows = conn.execute(
+        text("""
+            SELECT DISTINCT ON (rs.route_id, rs.direction_id)
+                rs.route_id, rs.direction_id, t.trip_headsign
+            FROM route_stops rs
+            JOIN trips t ON t.trip_id = rs.trip_id
+            WHERE rs.route_id = ANY(CAST(:ids AS text[]))
+            ORDER BY rs.route_id, rs.direction_id
+        """),
+        {"ids": route_ids},
+    )
+    result: dict[str, list[tuple[int, str]]] = {}
+    for route_id, direction_id, headsign in rows:
+        result.setdefault(route_id, []).append((direction_id, headsign))
+    return result
+
+
+def line_groups(conn: Connection) -> list[tuple[str, list[str]]]:
+    """The line numbers by hundreds, for the "Seleccioná la línea" list:
+    ("1 a 99", ["1", "2", …]), ("100 a 199", […]), …, and ("Otras", [names
+    without a number, like AZUL1]). A number stands for all its branches."""
+    names = conn.execute(text("SELECT DISTINCT route_short_name FROM routes")).scalars()
+    numbers: set[int] = set()
+    others: set[str] = set()
+    for name in names:
+        number = re.match(r"\d+", name)
+        if number:
+            numbers.add(int(number[0]))
+        # The search only takes letters and digits: R333/9 can't be asked for
+        elif LINE_NAME.fullmatch(name):
+            others.add(name)
+
+    groups = []
+    for hundred, group in groupby(sorted(numbers), key=lambda n: n // 100):
+        start = hundred * 100
+        label = f"{max(start, 1)} a {start + 99}"
+        groups.append((label, [str(n) for n in group]))
+    if others:
+        groups.append(("Otras", sorted(others)))
+    return groups
 
 
 def route_directions(conn: Connection, route_id: str) -> list[Direction]:

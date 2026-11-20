@@ -228,30 +228,25 @@ def test_routes_search_is_not_taken_as_a_route_id(client):
 
 @pytest.fixture
 def live_152a(client):
-    """The client fixture, but with two fresh 152A buses in the live feed."""
+    """The client fixture, but with two fresh 152A buses in the live feed,
+    one each way, and a third whose direction the stops don't tell."""
     now = int(time.time())
+
+    def bus(vehicle_id, timestamp=now):
+        # The feed's own direction_id, the same on all
+        return Vehicle(
+            vehicle_id,
+            lat=-34.58,
+            lon=-58.42,
+            timestamp=timestamp,
+            label="1",
+            direction_id=0,
+        )
+
     live = LiveFeed(
-        lines={"311": "152A"},
-        vehicles={
-            "311": [
-                Vehicle(
-                    "a",
-                    lat=-34.58,
-                    lon=-58.42,
-                    timestamp=now,
-                    label="1",
-                    direction_id=0,
-                ),
-                Vehicle(
-                    "b",
-                    lat=-34.59,
-                    lon=-58.42,
-                    timestamp=now - 10,
-                    label="2",
-                    direction_id=1,
-                ),
-            ]
-        },
+        lines={"311": "152A", "312": "152A", "313": "152A"},
+        vehicles={"311": [bus("a")], "312": [bus("b", now - 10)], "313": [bus("c")]},
+        directions={"311": 0, "312": 1},
     )
     app.dependency_overrides[get_live] = lambda: live
     return client
@@ -262,14 +257,15 @@ def test_route_vehicles_endpoint_returns_the_buses_of_the_line(live_152a):
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/geo+json"
-    assert sorted(f["id"] for f in response.json()["features"]) == ["a", "b"]
+    assert sorted(f["id"] for f in response.json()["features"]) == ["a", "b", "c"]
 
 
 def test_route_vehicles_endpoint_sends_the_direction_for_the_color(live_152a):
     features = live_152a.get("/api/v1/routes/1001/vehicles").json()["features"]
 
+    # The direction the stops give; the feed's own when they don't tell (c)
     directions = {f["id"]: f["properties"]["direction_id"] for f in features}
-    assert directions == {"a": 0, "b": 1}
+    assert directions == {"a": 0, "b": 1, "c": 0}
 
 
 def test_route_vehicles_endpoint_is_empty_for_a_line_without_live_data(live_152a):
@@ -421,6 +417,8 @@ def test_route_page_loads_maplibre_before_route_js(client):
 
     assert "/static/maplibre-gl.css" in html
     assert html.index("/static/maplibre-gl.js") < html.index("/static/route.js")
+    # route.js uses the RouteLayers it defines
+    assert html.index("/static/route_layers.js") < html.index("/static/route.js")
 
 
 def test_route_page_works_for_a_route_without_trips(client):
@@ -441,6 +439,7 @@ def test_route_page_returns_404_for_unknown_route(client):
         ("/static/maplibre-gl.js", "javascript"),
         ("/static/maplibre-gl.css", "text/css"),
         ("/static/route.js", "javascript"),
+        ("/static/route_layers.js", "javascript"),
     ],
 )
 def test_static_serves_map_files(client, path, content_type):

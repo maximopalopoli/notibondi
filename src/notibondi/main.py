@@ -28,6 +28,7 @@ from notibondi.realtime import (
 from notibondi.routes import (
     Route,
     get_route,
+    line_groups,
     route_exists,
     route_geojson,
     search_routes,
@@ -440,8 +441,10 @@ def route_vehicles_api(route_id: str, conn: Conn, live: Live):
 
 
 @app.get("/routes", response_class=HTMLResponse, include_in_schema=False)
-def routes_page(request: Request):
-    return templates.TemplateResponse(request, "routes.html")
+def routes_page(request: Request, conn: Conn):
+    return templates.TemplateResponse(
+        request, "routes.html", {"groups": line_groups(conn)}
+    )
 
 
 @app.get(
