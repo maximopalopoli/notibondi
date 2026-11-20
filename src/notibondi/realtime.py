@@ -16,6 +16,9 @@ MIN_SHARE = 0.5
 # The feed sometimes reports a delay of ~84,500 s around midnight (a bug,
 # seen by the pilot). No real bus is 12 hours late, so those are dropped.
 MAX_DELAY_SECONDS = 12 * 60 * 60
+# The feed often sends one bus as two (two vehicles on the same trip, ~12 s
+# apart, so "1, 1, 16, 16 min"): arrivals of a line closer than this are one
+SAME_BUS_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -353,7 +356,8 @@ def merge_arrivals(
     """Live arrivals first-class; scheduled ones only for lines with no live data.
 
     Lines are matched by name, never by route_id or trip_id. Live arrivals
-    already passed or beyond the schedule window are dropped.
+    already passed or beyond the schedule window are dropped, and so are those
+    less than SAME_BUS_SECONDS after the previous one of their line.
     """
     # The feed has no usable headsign nor direction (its direction_id isn't
     # the GTFS one), so borrow the schedule's for that line.
@@ -361,10 +365,15 @@ def merge_arrivals(
     now_ts = at.timestamp()
 
     realtime = []
-    for a in live:
+    last_kept: dict[str, int] = {}
+    for a in sorted(live, key=lambda a: a.arrival_time):
         seconds_left = a.arrival_time - now_ts
         if seconds_left < 0 or seconds_left >= WINDOW_SECONDS:
             continue
+        previous = last_kept.get(a.line)
+        if previous is not None and a.arrival_time - previous < SAME_BUS_SECONDS:
+            continue
+        last_kept[a.line] = a.arrival_time
         realtime.append(
             Arrival(
                 line=a.line,

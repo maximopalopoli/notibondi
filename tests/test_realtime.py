@@ -574,6 +574,45 @@ def test_merge_drops_live_arrivals_already_passed():
     assert [a.minutes for a in merged] == [1]
 
 
+def test_merge_joins_two_buses_of_a_line_less_than_a_minute_apart():
+    # The feed's "1, 1, 16, 16 min": two vehicles on one trip, ~12 s apart
+    merged = merge_arrivals(
+        [live_in(60), live_in(72), live_in(16 * 60), live_in(16 * 60 + 12)], [], AT
+    )
+
+    assert [a.minutes for a in merged] == [1, 16]
+
+
+def test_merge_keeps_buses_of_a_line_a_minute_or_more_apart():
+    merged = merge_arrivals([live_in(5 * 60), live_in(6 * 60)], [], AT)
+
+    assert [a.minutes for a in merged] == [5, 6]
+
+
+def test_merge_keeps_buses_of_different_lines_at_the_same_time():
+    merged = merge_arrivals(
+        [live_in(5 * 60, line="108A"), live_in(5 * 60, line="60")], [], AT
+    )
+
+    assert sorted(a.line for a in merged) == ["108A", "60"]
+
+
+def test_merge_compares_each_bus_with_the_last_one_kept():
+    # 40 s after the first is joined to it; 80 s after it is another bus,
+    # even if it is only 40 s after the joined one
+    merged = merge_arrivals(
+        [live_in(5 * 60 + 80), live_in(5 * 60), live_in(5 * 60 + 40)], [], AT
+    )
+
+    assert [a.minutes for a in merged] == [5, 6]
+
+
+def test_merge_a_bus_already_passed_does_not_hide_the_next_one():
+    merged = merge_arrivals([live_in(-30), live_in(10)], [], AT)
+
+    assert [a.minutes for a in merged] == [0]
+
+
 def test_merge_a_line_with_only_past_live_arrivals_falls_back_to_the_schedule():
     merged = merge_arrivals([live_in(-30)], [sched("108A", 6)], AT)
 
