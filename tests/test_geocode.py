@@ -8,6 +8,8 @@ from notibondi.geocode import (
     AMBA_VIEWBOX,
     CABA_VIEWBOX,
     MAX_CACHED,
+    MAX_PENDING,
+    GeocodeBusy,
     GeocodeError,
     Geocoder,
     Place,
@@ -379,3 +381,63 @@ async def test_a_province_result_inside_the_caba_box_asks_the_amba(settings):
 
     assert len(seen) == 2
     assert place.label == "Avenida Triunvirato 3424, Villa Urquiza"
+
+
+# The line: a flood of new addresses is refused, not queued
+
+
+def held_until(release: asyncio.Event):
+    """A Nominatim that answers only when the test lets it."""
+
+    async def handler(req):
+        await release.wait()
+        return httpx2.Response(200, json=[TRIUNVIRATO])
+
+    return handler
+
+
+@pytest.mark.anyio
+async def test_too_many_searches_waiting_are_refused(settings):
+    release = asyncio.Event()
+    geocoder = geocoder_with(held_until(release), settings)
+    waiting = [
+        asyncio.create_task(geocoder.search(f"calle {i}")) for i in range(MAX_PENDING)
+    ]
+    await asyncio.sleep(0)  # all of them in line
+
+    with pytest.raises(GeocodeBusy):
+        await geocoder.search("one more")
+
+    release.set()
+    await asyncio.gather(*waiting)
+    # Once the line empties, new searches go through again
+    assert await geocoder.search("later") is not None
+
+
+@pytest.mark.anyio
+async def test_a_cached_address_answers_even_with_a_full_line(settings):
+    release = asyncio.Event()
+    release.set()
+    geocoder = geocoder_with(held_until(release), settings)
+    await geocoder.search("Triunvirato 3424")
+    release.clear()
+    waiting = [
+        asyncio.create_task(geocoder.search(f"calle {i}")) for i in range(MAX_PENDING)
+    ]
+    await asyncio.sleep(0)
+
+    assert await geocoder.search("Triunvirato 3424") is not None
+
+    release.set()
+    await asyncio.gather(*waiting)
+
+
+@pytest.mark.anyio
+async def test_a_failed_search_leaves_the_line(settings):
+    geocoder = geocoder_with(lambda req: httpx2.Response(503), settings)
+    for i in range(MAX_PENDING + 1):
+        with pytest.raises(GeocodeError) as error:
+            await geocoder.search(f"calle {i}")
+        assert not isinstance(error.value, GeocodeBusy)
+
+    assert geocoder.pending == 0

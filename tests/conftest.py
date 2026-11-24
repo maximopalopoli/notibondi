@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, make_url
 
 from notibondi.config import get_settings
-from notibondi.db import get_conn
+from notibondi.db import get_conn, get_engine
 from notibondi.importer import import_gtfs
 from notibondi.main import app, get_live
 from notibondi.worker import LiveFeed
@@ -58,6 +58,7 @@ def client(db_engine, gtfs_loaded):
             yield conn
 
     app.dependency_overrides[get_conn] = override
+    app.dependency_overrides[get_engine] = lambda: db_engine
     # The lifespan (and so the worker) doesn't run in tests. An empty LiveFeed
     # is degraded, so routes fall back to the schedule unless a test says so.
     app.dependency_overrides[get_live] = LiveFeed

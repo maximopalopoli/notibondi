@@ -2,7 +2,7 @@
 
 import pytest
 
-from notibondi.geocode import GeocodeError, Place
+from notibondi.geocode import GeocodeBusy, GeocodeError, Place
 from notibondi.main import app, get_geocoder
 
 # Near the fixture's Plaza Italia stop (the same point the nearby tests use)
@@ -98,6 +98,32 @@ def test_nominatim_down_gives_a_message_not_a_crash(client_geocoding):
 
     assert response.status_code == 200
     assert "No pudimos buscar la dirección" in response.text
+
+
+def test_a_full_line_for_nominatim_gives_a_message(client_geocoding):
+    client, _ = client_geocoding(GeocodeBusy("5 searches already waiting"))
+
+    response = get(client, "Santa Fe 4000")
+
+    assert response.status_code == 200
+    assert "No pudimos buscar la dirección" in response.text
+
+
+def test_no_connection_is_held_while_nominatim_answers(client, db_engine):
+    # A search can wait seconds in line: holding a connection all that time
+    # would run the pool dry for every other page
+    class WatchingGeocoder:
+        async def search(self, q):
+            self.checked_out = db_engine.pool.checkedout()
+            return PLAZA_ITALIA
+
+    geocoder = WatchingGeocoder()
+    app.dependency_overrides[get_geocoder] = lambda: geocoder
+
+    html = get(client, "Santa Fe 4000").text
+
+    assert geocoder.checked_out == 0
+    assert '<button type="button" class="stop"' in html
 
 
 @pytest.mark.parametrize("q", ["", "  ", "ab"])

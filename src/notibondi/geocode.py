@@ -34,10 +34,18 @@ MIN_INTERVAL_S = 1.0
 TIMEOUT = httpx2.Timeout(8, connect=5)
 # A person searches the same 2 or 3 addresses; this only stops it growing forever
 MAX_CACHED = 500
+# Searches going to Nominatim at once, the one asking plus the ones in line.
+# At one per second the last one waits ~5 s; more than that, a bot is
+# flooding it, and in line they'd only hold requests open
+MAX_PENDING = 5
 
 
 class GeocodeError(Exception):
     """Any failure asking Nominatim: network, bad status or bad body."""
+
+
+class GeocodeBusy(GeocodeError):
+    """Too many searches already waiting for Nominatim: try again later."""
 
 
 class Place(BaseModel):
@@ -87,6 +95,7 @@ class Geocoder:
         # One request at a time, so two people searching can't break the 1/s limit
         self.lock = asyncio.Lock()
         self.last_request: float | None = None
+        self.pending = 0
         # Not found (None) is cached too: asking again gives the same answer
         self.cache: OrderedDict[str, Place | None] = OrderedDict()
 
@@ -96,15 +105,21 @@ class Geocoder:
             self.cache.move_to_end(key)
             return self.cache[key]
 
-        async with self.lock:
-            # Someone else may have searched it while this one waited
-            if key in self.cache:
-                return self.cache[key]
-            found = await self._ask(key, CABA_VIEWBOX, CABA_LIMIT)
-            place = next((p for p, state in found if state == CABA_STATE), None)
-            if place is None:
-                found = await self._ask(key, AMBA_VIEWBOX, 1)
-                place = found[0][0] if found else None
+        if self.pending >= MAX_PENDING:
+            raise GeocodeBusy(f"{self.pending} searches already waiting")
+        self.pending += 1
+        try:
+            async with self.lock:
+                # Someone else may have searched it while this one waited
+                if key in self.cache:
+                    return self.cache[key]
+                found = await self._ask(key, CABA_VIEWBOX, CABA_LIMIT)
+                place = next((p for p, state in found if state == CABA_STATE), None)
+                if place is None:
+                    found = await self._ask(key, AMBA_VIEWBOX, 1)
+                    place = found[0][0] if found else None
+        finally:
+            self.pending -= 1
 
         self.cache[key] = place
         if len(self.cache) > MAX_CACHED:

@@ -17,9 +17,9 @@ from sqlalchemy import Connection
 from starlette.concurrency import run_in_threadpool
 
 from notibondi.config import get_settings
-from notibondi.db import Conn, get_engine
+from notibondi.db import Conn, DbEngine, get_engine
 from notibondi.fixtures import load_fixtures
-from notibondi.geocode import GeocodeError, Geocoder
+from notibondi.geocode import GeocodeBusy, GeocodeError, Geocoder
 from notibondi.realtime import (
     line_number,
     load_directions_by_stop,
@@ -445,16 +445,24 @@ def message(text: str) -> HTMLResponse:
 )
 async def address_stops_partial(
     request: Request,
-    conn: Conn,
+    engine: DbEngine,
     geocoder: GeocoderDep,
     q: Annotated[str, Query(max_length=200)] = "",
 ):
-    """The stops near an address, as if it were the user's location."""
+    """The stops near an address, as if it were the user's location.
+
+    It takes the engine, not a Conn: the search can wait seconds in line for
+    Nominatim, and a connection held all that time by each waiting request
+    would run the pool dry for every other page."""
     q = q.strip()
     if len(q) < 3:
         return message("Escribí una dirección, por ejemplo Triunvirato 3424.")
     try:
         place = await geocoder.search(q)
+    except GeocodeBusy:
+        # Expected under a flood: one line, not a traceback per request
+        logging.getLogger(__name__).warning("geocode busy, search refused")
+        return message("No pudimos buscar la dirección. Probá de nuevo en un rato.")
     except GeocodeError:
         logging.getLogger(__name__).warning("geocode failed", exc_info=True)
         return message("No pudimos buscar la dirección. Probá de nuevo en un rato.")
@@ -463,10 +471,13 @@ async def address_stops_partial(
             "No encontramos esa dirección. Probá con calle y altura, "
             "por ejemplo Triunvirato 3424."
         )
+
+    def stops_near_place():
+        with engine.connect() as conn:
+            return stops_around(conn, place.lat, place.lon, 400)
+
     # A sync query from an async route: in a thread, so it doesn't block the loop
-    stops, first_farther = await run_in_threadpool(
-        stops_around, conn, place.lat, place.lon, 400
-    )
+    stops, first_farther = await run_in_threadpool(stops_near_place)
     return templates.TemplateResponse(
         request,
         "partials/stops.html",
