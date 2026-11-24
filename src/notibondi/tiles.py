@@ -11,10 +11,26 @@ With no file in data/tiles, the maps use OpenFreeMap like before.
 
 from pathlib import Path
 
+from starlette.staticfiles import StaticFiles
+
 # Relative to the working directory, like data/gtfs.zip: outside git and the
 # Docker image (in compose it's a volume)
 TILES_DIR = Path("data/tiles")
 TILES_PREFIX = "/tiles"
+
+
+class OptionalStaticFiles(StaticFiles):
+    """StaticFiles for a folder that may not exist: then every file is a 404.
+
+    check_dir=False only lets the app start without it. On the first request
+    Starlette checks again and raises, so a fresh clone without data/tiles
+    answered /tiles/... with a 500."""
+
+    def __init__(self, directory: Path) -> None:
+        super().__init__(directory=directory, check_dir=False)
+
+    async def check_config(self) -> None:
+        pass
 
 
 def newest_tiles(directory: Path) -> str | None:

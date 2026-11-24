@@ -72,6 +72,14 @@ def test_tiles_are_404_without_the_file(tiles_dir):
     assert plain_client.get("/tiles/caba.pmtiles").status_code == 404
 
 
+def test_tiles_are_404_without_the_folder(tmp_path, monkeypatch):
+    # A fresh clone: data/ is in .gitignore, so data/tiles isn't there
+    monkeypatch.setattr(tiles_files, "directory", tmp_path / "missing")
+    monkeypatch.setattr(tiles_files, "all_directories", [tmp_path / "missing"])
+
+    assert plain_client.get("/tiles/caba.pmtiles").status_code == 404
+
+
 def test_tiles_never_serve_other_files_of_data():
     # The mount is data/tiles, not data/: gtfs.zip stays private
     assert plain_client.get("/tiles/../gtfs.zip").status_code == 404

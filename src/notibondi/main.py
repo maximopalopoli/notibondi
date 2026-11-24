@@ -59,7 +59,7 @@ from notibondi.stops import (
     stop_line_paths,
     stop_lines,
 )
-from notibondi.tiles import TILES_DIR, TILES_PREFIX, TilesUrl
+from notibondi.tiles import TILES_DIR, TILES_PREFIX, OptionalStaticFiles, TilesUrl
 from notibondi.walk import leave_in, walk_minutes
 from notibondi.worker import (
     Health,
@@ -164,9 +164,9 @@ DistanceM = Annotated[int | None, Query(ge=0, le=MAX_RADIUS_M)]
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # The Protomaps file, if data/tiles has one. Not under /static/: the service
 # worker caches /static/, and the Cache API can't keep Range (206) answers.
-# check_dir=False: the app starts the same without the folder (the maps then
-# use OpenFreeMap)
-tiles_files = StaticFiles(directory=TILES_DIR, check_dir=False)
+# Without the folder the app starts the same (the maps then use OpenFreeMap)
+# and /tiles/ is a 404
+tiles_files = OptionalStaticFiles(TILES_DIR)
 app.mount(TILES_PREFIX, tiles_files, name="tiles")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 # Every static file with ?v=<hash of its content>, so a deploy is never stale
