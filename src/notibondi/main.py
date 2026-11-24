@@ -176,14 +176,16 @@ templates.env.globals["tiles_url"] = TilesUrl(TILES_DIR)
 templates.env.globals["MAX_RADIUS_M"] = MAX_RADIUS_M
 
 
-def get_live(request: Request) -> LiveFeed:
+# async, like get_geocoder: a sync dependency runs in a thread, and /health
+# must answer even when they're all busy
+async def get_live(request: Request) -> LiveFeed:
     return request.app.state.live
 
 
 Live = Annotated[LiveFeed, Depends(get_live)]
 
 
-def get_geocoder(request: Request) -> Geocoder:
+async def get_geocoder(request: Request) -> Geocoder:
     return request.app.state.geocoder
 
 
@@ -224,8 +226,10 @@ def query_string(**params) -> str:
 templates.env.globals["query_string"] = query_string
 
 
+# async: it doesn't touch the database, so it answers in the event loop even
+# when every thread is waiting for a connection
 @app.get("/health", response_model=Health)
-def health(live: Live) -> Health:
+async def health(live: Live) -> Health:
     return feed_health(live)
 
 
@@ -328,9 +332,15 @@ def stops_around(
     return near + farther, (len(near) if farther else None)
 
 
+# The page always asks for 400 m. Up to MAX_RADIUS_M, one request downtown
+# gave ~1 MB of HTML: a cheap way to spend the server's bandwidth
+PAGE_RADIUS_M = 400
+PageRadius = Annotated[int, Query(gt=0, le=PAGE_RADIUS_M)]
+
+
 @app.get("/partials/stops/nearby", response_class=HTMLResponse, include_in_schema=False)
 def nearby_stops_partial(
-    request: Request, lat: Lat, lon: Lon, conn: Conn, radius: Radius = 400
+    request: Request, lat: Lat, lon: Lon, conn: Conn, radius: PageRadius = PAGE_RADIUS_M
 ):
     stops, first_farther = stops_around(conn, lat, lon, radius)
     return templates.TemplateResponse(
@@ -477,9 +487,9 @@ async def address_stops_partial(
         return message("Escribí una dirección, por ejemplo Triunvirato 3424.")
     try:
         place = await geocoder.search(q)
-    except GeocodeBusy:
+    except GeocodeBusy as e:
         # Expected under a flood: one line, not a traceback per request
-        logging.getLogger(__name__).warning("geocode busy, search refused")
+        logging.getLogger(__name__).warning("geocode busy, search refused: %s", e)
         return message("No pudimos buscar la dirección. Probá de nuevo en un rato.")
     except GeocodeError:
         logging.getLogger(__name__).warning("geocode failed", exc_info=True)

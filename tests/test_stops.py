@@ -285,3 +285,13 @@ def at_stop_lat_lon(client):
         if s["stop_id"] == ONLY_505R3
     )
     return stop["lat"], stop["lon"]
+
+
+def test_the_stops_page_doesnt_answer_a_huge_radius(client):
+    # Downtown, the API's maximum gave ~1 MB of HTML for one request
+    response = client.get(
+        "/partials/stops/nearby",
+        params={"lat": -34.6037, "lon": -58.3816, "radius": 1500},
+    )
+
+    assert response.status_code == 422
