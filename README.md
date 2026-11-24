@@ -183,6 +183,71 @@ Every page uses the same query functions as the JSON API. The docs are at
 - **Fast import.** `stop_times` and `shapes` load with `COPY`, and the big
   index is dropped before the load and built once at the end.
 
+## Real-time coverage
+
+The city's live feeds and the static GTFS (2021) don't share IDs, so every
+live `route_id` has to be matched to a line before its buses can show (see
+"Live and scheduled, mixed by line name" above). This section says how much
+of the feed the app can use, and why the rest is missing.
+
+### How much
+
+Measured on 2026-11-24 (Tuesday, 9:40) on the live feed, with different
+versions of `route_overrides.csv`:
+
+| Overrides | Line numbers with live arrivals | Branches with live arrivals | Stops with live arrivals |
+| --- | --- | --- | --- |
+| None | 213 of 275 (77%) | 580 of 1,072 (54%) | 27,378 |
+| 104 rows (one hour of traces, 2026-11-18) | 226 of 275 (82%) | 614 of 1,072 (57%) | 29,521 |
+| 274 rows (three days of traces, 2026-11-20) | 247 of 275 (90%) | 685 of 1,072 (64%) | 33,813 |
+
+The numbers count arrivals of an unknown branch ("ramal sin confirmar"), the
+branches don't. They move during the day, because the names feed only lists
+the routes that have a bus right now.
+
+### Why some buses are missing
+
+- **Buses without a trip.** About 29% of the positions feed has no `trip`,
+  so there's no way to know the line. Most of those buses are moving. In
+  three feeds over 38 minutes (2026-11-16), many got a `trip` again a few
+  minutes later (they were between two trips), but almost half went the
+  whole time without one.
+- **Names the GTFS doesn't have.** Some live names are branches the 2021
+  GTFS doesn't know (`1 B`, `504METALURG`), and a few lines aren't in it at
+  all (239, 507).
+- **Names that don't say the branch.** `152` or `133 Pte. Saavedra` give the
+  number only, and some branches share so many stops that the stops can't
+  pick one. The headsign letter doesn't help either: `Ramal A` often isn't
+  branch A in the GTFS.
+- **Routes with no name.** Some `route_id`s never appear in the names feed,
+  and their stops are unknown too. For example, the 114 runs as `route_id`
+  236 without ever being named.
+- **New stops.** The 2021 GTFS only knows 41% of the stops in today's
+  arrivals feed. An arrival at a stop the app doesn't know can't be shown.
+- **Wrong names.** The names feed is sometimes wrong: `route_id`s 1385 and
+  1386 are named `8D` but their buses run the 5B.
+
+### What the app does about it
+
+- **Buses of an unknown branch still show**, faded on the map of every
+  branch of their number and as "ramal sin confirmar" at its stops.
+- **`route_overrides.csv`** fixes `route_id`s by hand. The rows come from
+  bus positions recorded over several days (`make track`) and matched with
+  the routes. A `route_id` keeps its line number from day to day (1,112 of
+  1,115 did, over three weekdays), and almost always its branch too, so a
+  row checked once stays valid.
+
+### What could raise it
+
+- More override rows. 13 rows from the three days of traces are left out
+  until someone checks them on a map, and more days of positions will give
+  more rows.
+- Rebuilding the routes that changed since 2021 from recorded positions,
+  once there are a few weeks of them.
+- Remembering the line of each bus (`vehicle.id`) from the feeds where it
+  did have a `trip`, for buses between two trips.
+- A newer GTFS, if the city publishes one.
+
 ## Known limits
 
 - **Addresses are searched in CABA first.** Street names repeat across the
@@ -190,21 +255,11 @@ Every page uses the same query functions as the JSON API. The docs are at
   the province needs its locality: "Mitre 500, Quilmes". Nominatim allows one
   request per second, so a busy instance would need its own Nominatim server.
 
-- **Live data covers most line numbers, but only about half of the
-  branches.** On 2026-11-18, 202 of 274 line numbers (74%) had live data on
-  at least one branch, and 593 of 1053 branches (56%). `route_overrides.csv`
-  added 13 more numbers on 2026-11-20. The rest have names of branches the
-  GTFS doesn't have (`1 B`, `504METALURG`), branches that can't be told
-  apart (152), or no bus in the names feed yet. The buses of an unknown
-  branch show on every branch, faded; lines the GTFS doesn't have at all
-  (239, 507) don't show.
-  The headsign letter doesn't help: `Ramal A` often isn't branch A in the GTFS.
-  Arrivals also need the stop: the static GTFS (2021) only knows 41% of the
-  stops in today's feed.
+- **Not every bus has live data.** About 9 in 10 line numbers and 2 in 3
+  branches do. See [Real-time coverage](#real-time-coverage) for the numbers
+  and the reasons.
 - **Some routes on the map may be outdated.** They come from the 2021 GTFS,
   so a line that changed its streets since then is drawn where it used to go.
-- **Buses without a trip are not shown.** About 29% of the positions feed has
-  no `trip`, so there's no way to know their line.
 - **The same bus can show twice at a stop.** A live bus of an unknown
   branch shows as its number ("152 · ramal sin confirmar"), and the
   scheduled arrivals of each branch (152A, 152B…) still show next to it,
