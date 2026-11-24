@@ -34,7 +34,7 @@ when it doesn't), and see a line's route and its live buses on a map.
 | Project | `uv`, `ruff`, `pytest` |
 | API | FastAPI + Pydantic, served by `uvicorn` |
 | Database | PostgreSQL 17 + PostGIS, SQLAlchemy 2 Core (raw SQL with `text()`), hand-written Alembic migrations |
-| Real time | `httpx2` + `gtfs-realtime-bindings`, two asyncio tasks in the background |
+| Real time | `httpx2` + `gtfs-realtime-bindings`, three asyncio tasks in the background |
 | Addresses | [Nominatim](https://nominatim.org) (OpenStreetMap), called from the server |
 | Web | Jinja2 + htmx, MapLibre GL (served from `static/`, no CDN), a service worker and a web manifest |
 | Map | Our own [Protomaps](https://protomaps.com) file of the AMBA, with its fonts and icons, served by the app; [OpenFreeMap](https://openfreemap.org) Positron when that file is missing |
@@ -120,9 +120,11 @@ Every page uses the same query functions as the JSON API. The docs are at
 | Endpoint | Returns |
 | --- | --- |
 | `GET /health` | `ok` or `degraded`, and the age of both live feeds (only the arrivals feed can make it `degraded`) |
-| `GET /api/v1/stops/nearby?lat=&lon=&radius=` | stops around a point |
+| `GET /api/v1/stops/nearby?lat=&lon=&radius=` | stops around a point (radius in meters, 400 by default, up to 1,500) |
 | `GET /api/v1/stops/search?q=` | stops by name |
 | `GET /api/v1/stops/{stop_id}/arrivals` | next arrivals, each tagged live or scheduled |
+| `GET /api/v1/stops/{stop_id}/vehicles?line=` | live buses of the lines that stop there; with `line`, only that line's buses going this stop's way |
+| `GET /api/v1/stops/{stop_id}/lines/{line}/geojson` | the path of a line that stops there, in the direction it comes to the stop |
 | `GET /api/v1/routes/search?q=` | lines by number |
 | `GET /api/v1/routes/{route_id}/geojson` | both directions and their stops, as a GeoJSON `FeatureCollection` |
 | `GET /api/v1/routes/{route_id}/vehicles` | the line's live buses as GeoJSON points, with their direction and position time (older than 5 minutes are left out) |
@@ -133,14 +135,16 @@ Every page uses the same query functions as the JSON API. The docs are at
   process. With one instance that's enough, and it's one service less to run.
   The two decisions go together: uvicorn runs with a single worker, because
   each worker would start its own background tasks, hit the GCBA again and
-  keep its own copy of the data.
+  keep its own copy of the data. The address search works the same way: its
+  cache and its Nominatim limits (1 request per second, 2,000 a day) live in
+  memory, so more workers would multiply them.
 - **Background tasks, not per-request calls.** Asyncio tasks download the
   city feeds, no matter how many users there are: arrivals (`tripUpdates`)
   every 30 s at rush hour and every 60 s the rest of the day, and bus
-  positions (the whole `vehiclePositions` feed) every 60 s. The data only
-  changes once a minute, so asking more often adds traffic, not freshness.
-  They are separate tasks so a stuck download of one feed never delays the
-  other. Requests only read from memory.
+  positions (the whole `vehiclePositions` feed) every 60 s, and line names
+  every 10 minutes (see below). The data only changes once a minute, so
+  asking more often adds traffic, not freshness. They are separate tasks so
+  a stuck download of one feed never delays the others. Requests only read from memory.
 - **Failures.** If a download fails, the app keeps serving the last good data,
   and `/health` reports how old it is. Retries start after 5 s and double
   (5, 10, 20…) up to the normal interval, and the first success goes back to
@@ -189,7 +193,7 @@ Every page uses the same query functions as the JSON API. The docs are at
   the service before the dash, so they show up with the rest of the day.
 - **Precomputed tables.** The import builds `stop_routes` (the lines at each
   stop) and `route_stops` (the stops of each line and direction, using the
-  trip with most stops). `route_stops` is 14 MB; the index it replaces would
+  trip with most stops). `route_stops` is 13 MB; the index it replaces would
   be about 1 GB.
 - **Fast import.** `stop_times` and `shapes` load with `COPY`, and the big
   index is dropped before the load and built once at the end.
@@ -264,7 +268,8 @@ the routes that have a bus right now.
 - **Addresses are searched in CABA first.** Street names repeat across the
   AMBA ("Corrientes 1500" is also in Quilmes and Olivos), so an address in
   the province needs its locality: "Mitre 500, Quilmes". Nominatim allows one
-  request per second, so a busy instance would need its own Nominatim server.
+  request per second, and the app also stops at 2,000 requests a day (cached
+  addresses still work). A busy instance would need its own Nominatim server.
 
 - **Not every bus has live data.** About 9 in 10 line numbers and 2 in 3
   branches do. See [Real-time coverage](#real-time-coverage) for the numbers
