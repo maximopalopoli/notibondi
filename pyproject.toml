@@ -1,8 +1,10 @@
 [project]
 name = "notibondi"
 version = "0.1.0"
-description = "Add your description here"
+description = "When does the next bus come? Live and scheduled arrivals for Buenos Aires buses"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "maximopalopoli", email = "mpalopoli@fi.uba.ar" }
 ]

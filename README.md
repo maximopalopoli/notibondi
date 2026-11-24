@@ -14,9 +14,14 @@ when it doesn't), and see a line's route and its live buses on a map.
   feed, and the GTFS schedule for lines that have no live data. From a nearby
   stop, each arrival also says when to leave ("Salí en 4 min", "No llegás").
 - **Lines and routes**: search a line by number ("152" gives 152A, 152B…) and
-  see both directions on a map, with arrows that show where each one goes.
+  see both directions on a map, each on its own side of the street, with
+  arrows that show where each one goes and a legend to show one direction or
+  both. Tapping a stop on the map opens its arrivals for that line.
 - **Live buses**: the line's buses on the same map, colored by direction and
   refreshed every 30 s. A line with no live data says so under the map.
+- **Favorites**: save stops and lines, and the home page shows them first.
+- **Installable**: it's a PWA, so it can be added to a phone's home screen,
+  with its own icon and an offline page.
 
 ## Stack
 
@@ -27,7 +32,8 @@ when it doesn't), and see a line's route and its live buses on a map.
 | Database | PostgreSQL 17 + PostGIS, SQLAlchemy 2 Core (raw SQL with `text()`), hand-written Alembic migrations |
 | Real time | `httpx2` + `gtfs-realtime-bindings`, two asyncio tasks in the background |
 | Addresses | [Nominatim](https://nominatim.org) (OpenStreetMap), called from the server |
-| Web | Jinja2 + htmx, MapLibre GL (served from `static/`, no CDN) with the [OpenFreeMap](https://openfreemap.org) Positron vector style |
+| Web | Jinja2 + htmx, MapLibre GL (served from `static/`, no CDN), a service worker and a web manifest |
+| Map | Our own [Protomaps](https://protomaps.com) file of the AMBA, with its fonts and icons, served by the app; [OpenFreeMap](https://openfreemap.org) Positron when that file is missing |
 | Infra | Docker: a multi-stage image built with uv that runs as a non-root user, and docker compose for the database and the app |
 
 ## Running it
@@ -44,7 +50,14 @@ You need [uv](https://docs.astral.sh/uv/) and Docker.
    minute) from the GCBA API to `data/gtfs.zip`, with the credentials from
    `.env`. Then run `make import` (about 3 minutes) and `make holidays`
    (loads `holidays.csv`).
-5. **App.** `make dev` and open <http://localhost:8000>.
+5. **Map tiles (optional).** Without them the maps use OpenFreeMap, so you
+   can skip this step. To serve your own map, install the
+   [`pmtiles` CLI](https://github.com/protomaps/go-pmtiles/releases), pick a
+   date from <https://maps.protomaps.com/builds> and run
+   `make tiles BUILD=20261118 NAME=amba-2026-11`. It cuts the AMBA (~75 MB)
+   out of the daily world build into `data/tiles/`. The app uses the newest
+   `.pmtiles` file in that folder.
+6. **App.** `make dev` and open <http://localhost:8000>.
 
    With `--reload`, every saved `.py` restarts the app and downloads the live
    feeds again (`tripUpdates` alone is ~9 MB and can take 30 s). To work
@@ -70,6 +83,7 @@ Other commands:
 | Command | What it does |
 | --- | --- |
 | `make gtfs` | downloads the static GTFS again (the old zip is kept until the new one is complete) |
+| `make tiles BUILD=… NAME=…` | cuts a new map of the AMBA from a Protomaps build |
 | `make check` | lint + tests (the database must be up) |
 | `make fmt` | fixes lint and formats the code |
 | `make pilot` | records the live feed of one line to `data/pilot.sqlite` |
@@ -136,8 +150,21 @@ Every page uses the same query functions as the JSON API. The docs are at
 - **Buses of an unknown branch show on every branch.** Many live names say
   the line and not the branch (`152`, `133 Pte. Saavedra`), and sometimes
   the stops can't pick one. Those buses show up faded on the map of every
-  branch of their line, with a note: a 152A user may see a 152C bus, but
-  without them the 152 had no buses at all.
+  branch of their line, with a note, and at the stops of their number as
+  "ramal sin confirmar": a 152A user may see a 152C bus, but without them
+  the 152 had no buses at all.
+- **Hand-checked lines win.** `src/notibondi/route_overrides.csv` gives the
+  line of live `route_id`s that the automatic match gets wrong or can't
+  resolve. Each row says how it was checked (mostly by matching recorded
+  bus positions with the routes) and when. It's loaded at startup, and its
+  rows win over the automatic match.
+- **Our own map.** The basemap is one Protomaps file of the AMBA, served by
+  the app, and the browser reads it in pieces with HTTP range requests. No
+  tile server, no API key and no usage limits from a third party. If the
+  file is missing, the maps fall back to OpenFreeMap.
+- **Static files with a hash in the URL.** Each file in `static/` is linked
+  with a hash of its content, so a browser (or the service worker) never
+  keeps an old copy after a deploy.
 - **The midnight trap.** A trip belongs to the service day it started on, so
   after midnight the buses still running from yesterday have times like
   `24:30:00`. The arrivals query looks at both service days.
@@ -163,11 +190,14 @@ Every page uses the same query functions as the JSON API. The docs are at
   the province needs its locality: "Mitre 500, Quilmes". Nominatim allows one
   request per second, so a busy instance would need its own Nominatim server.
 
-- **Live data covers about half of the lines** (573 of 1072 on 2026-11-17).
-  The rest have names of branches the GTFS doesn't have (`1 B`, `504METALURG`),
-  branches that can't be told apart (152), or no bus in the names feed yet.
-  On the map, the buses of an unknown branch show on every branch, faded;
-  lines the GTFS doesn't have at all (239, 507) don't show.
+- **Live data covers most line numbers, but only about half of the
+  branches.** On 2026-11-18, 202 of 274 line numbers (74%) had live data on
+  at least one branch, and 593 of 1053 branches (56%). `route_overrides.csv`
+  added 13 more numbers on 2026-11-20. The rest have names of branches the
+  GTFS doesn't have (`1 B`, `504METALURG`), branches that can't be told
+  apart (152), or no bus in the names feed yet. The buses of an unknown
+  branch show on every branch, faded; lines the GTFS doesn't have at all
+  (239, 507) don't show.
   The headsign letter doesn't help: `Ramal A` often isn't branch A in the GTFS.
   Arrivals also need the stop: the static GTFS (2021) only knows 41% of the
   stops in today's feed.
@@ -175,5 +205,25 @@ Every page uses the same query functions as the JSON API. The docs are at
   so a line that changed its streets since then is drawn where it used to go.
 - **Buses without a trip are not shown.** About 29% of the positions feed has
   no `trip`, so there's no way to know their line.
+- **The same bus can show twice at a stop.** A live bus of an unknown
+  branch shows as its number ("152 · ramal sin confirmar"), and the
+  scheduled arrivals of each branch (152A, 152B…) still show next to it,
+  because the app can't tell which branch that bus is. So "152 in 3 min"
+  and "152A in 4 min" may be the same bus.
 - About 222 stop names have `?` instead of `ñ`. That's how they come in the
   source data.
+
+## Data and credits
+
+- Bus data: static GTFS and real-time feeds from the
+  [API de Transporte](https://api-transporte.buenosaires.gob.ar) of the
+  Gobierno de la Ciudad de Buenos Aires.
+- Map data: © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+  contributors, through [Protomaps](https://protomaps.com) (and
+  [OpenFreeMap](https://openfreemap.org) as the fallback).
+- Address search: [Nominatim](https://nominatim.org), with OpenStreetMap data.
+
+## License
+
+The code is under the [MIT License](LICENSE). The data and the map have their
+own licenses and credits (see above).
