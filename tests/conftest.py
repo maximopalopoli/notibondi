@@ -18,7 +18,9 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "gtfs-mini"
 
 @pytest.fixture(scope="session")
 def db_engine():
-    url = make_url(get_settings().database_url)
+    # The owner: the tests create the schema, and app_engine drops to the app role
+    settings = get_settings()
+    url = make_url(settings.admin_database_url or settings.database_url)
     test_url = url.set(database="notibondi_test")
     test_url_str = test_url.render_as_string(hide_password=False)
 
