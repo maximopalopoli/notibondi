@@ -4,6 +4,8 @@ Notibondi is a web app for Buenos Aires buses, useful to find nearby stops,
 see when the next buses arrive (live when the city feed has data, scheduled
 when it doesn't), and see a line's route and its live buses on a map.
 
+![The 108 in Palermo: each direction in its own color, with its live buses](docs/screenshot.png)
+
 ## Features
 
 - **Nearby stops**: the stops around your location, or around an address
