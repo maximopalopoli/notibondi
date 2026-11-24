@@ -78,6 +78,24 @@ logging.basicConfig(
 logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
+class DropQueryString(logging.Filter):
+    """Log the path of each request without its query string.
+
+    The query carries where the user is (lat, lon) or the address they
+    typed (q): one access log line per search would be a record of where
+    each person goes. The path is enough to see traffic and errors."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn's args: client, method, path with query, HTTP version, status
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            client, method, path, version, status = record.args
+            record.args = (client, method, str(path).partition("?")[0], version, status)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(DropQueryString())
+
+
 def save_names(names: dict[str, str]) -> None:
     with get_engine().begin() as conn:
         save_route_names(conn, names)
