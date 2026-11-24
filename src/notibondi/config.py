@@ -8,7 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # The app connects as notibondi_app (reads, and writes only route_names).
+    # Migrations and the data imports connect as the owner, with
+    # ADMIN_DATABASE_URL; without it they use DATABASE_URL too
     database_url: str
+    admin_database_url: str | None = None
     gcba_client_id: str
     gcba_client_secret: SecretStr
     gcba_base_url: str = "https://apitransporte.buenosaires.gob.ar"

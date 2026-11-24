@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import Connection, text
 
-from notibondi.db import get_engine, without_timeout
+from notibondi.db import get_admin_engine, without_timeout
 from notibondi.schedules import HOLIDAY_SERVICE
 
 
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     path = Path(sys.argv[1])
 
     start = time.perf_counter()
-    with get_engine().begin() as conn:
+    with get_admin_engine().begin() as conn:
         without_timeout(conn)
         import_gtfs(conn, path)
 

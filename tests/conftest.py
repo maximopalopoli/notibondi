@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import make_url
 
 from notibondi.config import get_settings
-from notibondi.db import get_conn, get_engine, make_engine
+from notibondi.db import APP_ROLE, get_conn, get_engine, make_engine
 from notibondi.importer import import_gtfs
 from notibondi.main import app, get_live
 from notibondi.worker import LiveFeed
@@ -35,6 +35,15 @@ def db_engine():
 
 
 @pytest.fixture(scope="session")
+def app_engine(db_engine):
+    """The test database as the app sees it: with notibondi_app's rights.
+    The routes run on this one, so a route that needs a GRANT fails here."""
+    engine = make_engine(db_engine.url, role=APP_ROLE)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
 def gtfs_loaded(db_engine, gtfs_zip):
     with db_engine.begin() as conn:
         import_gtfs(conn, gtfs_zip)
@@ -53,13 +62,13 @@ def conn(db_engine, gtfs_loaded):
 
 
 @pytest.fixture
-def client(db_engine, gtfs_loaded):
+def client(app_engine, gtfs_loaded):
     def override():
-        with db_engine.connect() as conn:
+        with app_engine.connect() as conn:
             yield conn
 
     app.dependency_overrides[get_conn] = override
-    app.dependency_overrides[get_engine] = lambda: db_engine
+    app.dependency_overrides[get_engine] = lambda: app_engine
     # The lifespan (and so the worker) doesn't run in tests. An empty LiveFeed
     # is degraded, so routes fall back to the schedule unless a test says so.
     app.dependency_overrides[get_live] = LiveFeed

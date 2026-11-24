@@ -15,21 +15,49 @@ def get_conn() -> Iterator[Connection]:
 
 Conn = Annotated[Connection, Depends(get_conn)]
 
+# The role the app connects as (the add_app_role migration): it can read
+# every table and write only route_names, so a bug that runs SQL it shouldn't
+# can't change the data, create tables or reach the server's files
+APP_ROLE = "notibondi_app"
+
 # The slowest page query takes ~0.3 s (the stop lookups at startup). One that
 # runs longer is a bug or an abuse, and left alone it would keep a connection
 # and a thread busy: Postgres cancels it, and the request fails
 STATEMENT_TIMEOUT = "5s"
 
 
-def make_engine(url: str) -> Engine:
+# With every connection busy, a request waits this long for one and fails.
+# SQLAlchemy's default is 30 s: under a flood the waiting requests keep a
+# thread each, and the pages that don't need the database stop answering too
+POOL_TIMEOUT_S = 3
+
+
+def make_engine(url: str, role: str | None = None) -> Engine:
+    """role: connect as the owner but act as that role (the tests, that
+    use one login for everything)."""
+    options = f"-c statement_timeout={STATEMENT_TIMEOUT}"
+    if role:
+        options += f" -c role={role}"
     return create_engine(
-        url, connect_args={"options": f"-c statement_timeout={STATEMENT_TIMEOUT}"}
+        url,
+        # A failed query's error carries its parameters, and the traceback
+        # goes to the log: they'd leak where the user is (lat, lon)
+        hide_parameters=True,
+        pool_timeout=POOL_TIMEOUT_S,
+        connect_args={"options": options},
     )
 
 
 @lru_cache
 def get_engine() -> Engine:
     return make_engine(get_settings().database_url)
+
+
+@lru_cache
+def get_admin_engine() -> Engine:
+    """The owner's engine, for the scripts that load data."""
+    settings = get_settings()
+    return make_engine(settings.admin_database_url or settings.database_url)
 
 
 def without_timeout(conn: Connection) -> None:

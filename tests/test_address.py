@@ -109,12 +109,12 @@ def test_a_full_line_for_nominatim_gives_a_message(client_geocoding):
     assert "No pudimos buscar la dirección" in response.text
 
 
-def test_no_connection_is_held_while_nominatim_answers(client, db_engine):
+def test_no_connection_is_held_while_nominatim_answers(client, app_engine):
     # A search can wait seconds in line: holding a connection all that time
     # would run the pool dry for every other page
     class WatchingGeocoder:
         async def search(self, q):
-            self.checked_out = db_engine.pool.checkedout()
+            self.checked_out = app_engine.pool.checkedout()
             return PLAZA_ITALIA
 
     geocoder = WatchingGeocoder()

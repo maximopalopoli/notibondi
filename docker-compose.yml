@@ -22,8 +22,10 @@ services:
     env_file: .env
     environment:
       # Inside compose, Postgres is "db", not localhost (that's the app itself).
-      # .env keeps localhost for `make dev`.
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # .env keeps localhost for `make dev`. The app runs as notibondi_app;
+      # `docker compose run --rm app alembic upgrade head` uses the owner
+      DATABASE_URL: postgresql+psycopg://notibondi_app:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+      ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       # Containers run in UTC; this makes the log timestamps local time
       TZ: America/Argentina/Buenos_Aires
     ports:

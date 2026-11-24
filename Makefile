@@ -1,10 +1,13 @@
-.PHONY: up migrate gtfs import holidays dev lint test check fmt pilot track tiles
+.PHONY: up migrate app-role gtfs import holidays dev lint test check fmt pilot track tiles
 
 up:
 	docker compose up -d --wait db
 
 migrate:
 	uv run alembic upgrade head
+
+app-role:
+	uv run python -m notibondi.app_role
 
 gtfs:
 	uv run python -m notibondi.download_gtfs data/gtfs.zip

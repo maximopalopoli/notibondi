@@ -10,8 +10,11 @@ from notibondi.config import get_settings
 config = context.config
 
 # Tests pass their own URL; from the CLI, fall back to the app settings.
+# As the owner: the app role can't create tables
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    settings = get_settings()
+    url = settings.admin_database_url or settings.database_url
+    config.set_main_option("sqlalchemy.url", url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

@@ -44,10 +44,17 @@ You need [uv](https://docs.astral.sh/uv/) and Docker.
 
 1. **Settings.** Copy `.env.example` to `.env` and fill in `GCBA_CLIENT_ID` and
    `GCBA_CLIENT_SECRET`. You can get yours at
-   <https://api-transporte.buenosaires.gob.ar/registro>.
+   <https://api-transporte.buenosaires.gob.ar/registro>. Anywhere but your
+   machine, also change the example passwords.
 2. **Database.** `make up` starts Postgres + PostGIS and waits until it's
    ready. It also creates an empty `notibondi_test` database for the tests.
-3. **Schema.** `make migrate`.
+3. **Schema.** `make migrate`, then `make app-role`. The app doesn't connect
+   as the database owner but as `notibondi_app`, which can read every table
+   and write only the route names of the live feed. So a bug that runs the
+   wrong SQL can't change the data or reach the server. The migration creates
+   the role, and `make app-role` lets it log in with the password in
+   `DATABASE_URL`. Migrations and the imports use the owner, from
+   `ADMIN_DATABASE_URL`.
 4. **GTFS data.** `make gtfs` downloads the static GTFS (~209 MB, about a
    minute) from the GCBA API to `data/gtfs.zip`, with the credentials from
    `.env`. Then run `make import` (about 3 minutes) and `make holidays`
