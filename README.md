@@ -1,5 +1,7 @@
 # notibondi
 
+[![CI](https://github.com/maximopalopoli/notibondi/actions/workflows/ci.yml/badge.svg)](https://github.com/maximopalopoli/notibondi/actions/workflows/ci.yml)
+
 Notibondi is a web app for Buenos Aires buses, useful to find nearby stops,
 see when the next buses arrive (live when the city feed has data, scheduled
 when it doesn't), and see a line's route and its live buses on a map.
