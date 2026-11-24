@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import Connection, text
 
-from notibondi.db import get_engine
+from notibondi.db import get_engine, without_timeout
 
 
 def load_holidays(conn: Connection, path: Path) -> int:
@@ -28,5 +28,6 @@ def load_holidays(conn: Connection, path: Path) -> int:
 
 if __name__ == "__main__":
     with get_engine().begin() as conn:
+        without_timeout(conn)
         count = load_holidays(conn, Path(sys.argv[1]))
     print(f"Loaded {count} holidays")

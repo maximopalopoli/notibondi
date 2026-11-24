@@ -5,10 +5,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import make_url
 
 from notibondi.config import get_settings
-from notibondi.db import get_conn, get_engine
+from notibondi.db import get_conn, get_engine, make_engine
 from notibondi.importer import import_gtfs
 from notibondi.main import app, get_live
 from notibondi.worker import LiveFeed
@@ -26,7 +26,8 @@ def db_engine():
     alembic_cfg.set_main_option("sqlalchemy.url", test_url_str)
     command.upgrade(alembic_cfg, "head")
 
-    engine = create_engine(test_url)
+    # Same limit as the app, so a test that's too slow for it fails here
+    engine = make_engine(test_url)
     yield engine
 
     engine.dispose()
