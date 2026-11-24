@@ -11,6 +11,7 @@ import re
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
+from datetime import date
 
 import httpx2
 from pydantic import BaseModel
@@ -38,6 +39,11 @@ MAX_CACHED = 500
 # At one per second the last one waits ~5 s; more than that, a bot is
 # flooding it, and in line they'd only hold requests open
 MAX_PENDING = 5
+# Calls to Nominatim per day, for the whole app. Their policy forbids bulk
+# use, and a bot sending new addresses would keep us at 1/s all day (86,400
+# calls) until they block us. Real use is far below this; past it, address
+# search is off until tomorrow and the rest of the app works as usual
+MAX_DAILY_REQUESTS = 2000
 
 
 class GeocodeError(Exception):
@@ -45,7 +51,7 @@ class GeocodeError(Exception):
 
 
 class GeocodeBusy(GeocodeError):
-    """Too many searches already waiting for Nominatim: try again later."""
+    """Too many searches waiting for Nominatim, or today's calls spent."""
 
 
 class Place(BaseModel):
@@ -87,6 +93,7 @@ class Geocoder:
         settings: Settings,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        today: Callable[[], date] = date.today,
     ):
         self.client = client
         self.settings = settings
@@ -96,6 +103,9 @@ class Geocoder:
         self.lock = asyncio.Lock()
         self.last_request: float | None = None
         self.pending = 0
+        self.today = today
+        self.day = today()
+        self.requests_today = 0
         # Not found (None) is cached too: asking again gives the same answer
         self.cache: OrderedDict[str, Place | None] = OrderedDict()
 
@@ -143,10 +153,19 @@ class Geocoder:
             # Even a failed request counts toward the limit
             self.last_request = self.clock()
 
+    def _spend_one_request(self) -> None:
+        if self.today() != self.day:
+            self.day = self.today()
+            self.requests_today = 0
+        if self.requests_today >= MAX_DAILY_REQUESTS:
+            raise GeocodeBusy(f"{MAX_DAILY_REQUESTS} requests to Nominatim today")
+        self.requests_today += 1
+
     async def _request(
         self, q: str, viewbox: str, limit: int
     ) -> list[tuple[Place, str | None]]:
         """Each place found, with its state (province) to tell CABA apart."""
+        self._spend_one_request()
         params = {
             "q": q,
             "format": "jsonv2",

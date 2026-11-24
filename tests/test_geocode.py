@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date, timedelta
 
 import httpx2
 import pytest
@@ -8,6 +9,7 @@ from notibondi.geocode import (
     AMBA_VIEWBOX,
     CABA_VIEWBOX,
     MAX_CACHED,
+    MAX_DAILY_REQUESTS,
     MAX_PENDING,
     GeocodeBusy,
     GeocodeError,
@@ -441,3 +443,34 @@ async def test_a_failed_search_leaves_the_line(settings):
         assert not isinstance(error.value, GeocodeBusy)
 
     assert geocoder.pending == 0
+
+
+# The daily budget: a bot can't keep Nominatim busy all day
+
+
+@pytest.mark.anyio
+async def test_past_the_daily_requests_address_search_waits_for_tomorrow(
+    settings, monkeypatch
+):
+    monkeypatch.setattr("notibondi.geocode.MAX_DAILY_REQUESTS", 2)
+    day = [date(2026, 11, 24)]
+    clock = FakeClock()
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(answering(TRIUNVIRATO)))
+    geocoder = Geocoder(
+        client, settings, clock=clock, sleep=clock.sleep, today=lambda: day[0]
+    )
+    await geocoder.search("calle 1")
+    await geocoder.search("calle 2")
+
+    with pytest.raises(GeocodeBusy):
+        await geocoder.search("calle 3")
+    # What's cached still answers
+    assert await geocoder.search("calle 1") is not None
+
+    day[0] += timedelta(days=1)
+    assert await geocoder.search("calle 3") is not None
+
+
+def test_the_daily_budget_leaves_room_for_real_use():
+    # One search is 1 or 2 calls: a thousand searches a day still fit
+    assert 1000 <= MAX_DAILY_REQUESTS < 86_400
